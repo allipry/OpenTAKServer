@@ -72,5 +72,6 @@ build-backend = "poetry_dynamic_versioning.backend"
 
 [tool.poetry.scripts]
 opentakserver = "opentakserver.app:main"
+opentakserver-api = "opentakserver.api_server.server:main"
 eud_handler = "opentakserver.eud_handler.eud_handler:main"
 cot_parser = "opentakserver.cot_parser.cot_parser:main"
