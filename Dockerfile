@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     openssl \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -19,8 +20,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire project
 COPY . .
 
-# Install the package in development mode
-RUN pip install -e .
+# No additional dependencies needed - requirements.txt contains everything required for the API server
 
 # Create necessary directories
 RUN mkdir -p /app/certs /app/logs /app/data

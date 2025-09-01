@@ -1,4 +1,4 @@
-# Core Flask dependencies
+# Core Flask dependencies for API server
 Flask==3.1.0
 flask-cors==5.0.0
 flask-socketio==5.5.1
@@ -6,22 +6,13 @@ flask-socketio==5.5.1
 # System monitoring
 psutil==6.1.0
 
-# Database connectivity
+# Database connectivity (for connection testing)
 psycopg2-binary==2.9.9
 
-# Message queue
+# Message queue (for connection testing)
 pika==1.3.2
 
-# Additional utilities
-PyYAML==6.0.2
+# Socket.IO transport layer
 python-socketio[client,websocket_client,asyncio_client]==5.12.1
 gevent==25.5.1
 eventlet==0.40.0
-
-# Security and authentication
-PyJWT==2.9.0
-pyOpenSSL==24.2.1
-
-# Development and testing
-pytest==8.3.3
-pytest-cov==6.0.0
