@@ -57,6 +57,9 @@ yt-dlp
 pytest==8.3.3
 pytest-cov==6.0.0
 
+# Poetry for plugin management
+poetry==1.8.3
+
 # Additional dependencies for production
 Werkzeug
 requests
