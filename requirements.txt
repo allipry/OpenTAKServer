@@ -1,18 +1,73 @@
-# Core Flask dependencies for API server
+# Core Flask and web framework
 Flask==3.1.0
 flask-cors==5.0.0
 flask-socketio==5.5.1
+flask-apscheduler==1.13.1
+flask-migrate==4.1.0
+flask-sqlalchemy==3.1.1
+Flask-Security-Too[common,mfa]==5.6.1
 
-# System monitoring
-psutil==6.1.0
-
-# Database connectivity (for connection testing)
-psycopg2-binary==2.9.9
-
-# Message queue (for connection testing)
-pika==1.3.2
-
-# Socket.IO transport layer
+# Socket.IO and async support
 python-socketio[client,websocket_client,asyncio_client]==5.12.1
 gevent==25.5.1
 eventlet==0.40.0
+
+# Database and messaging
+sqlalchemy==2.0.39
+sqlalchemy-utils==0.41.2
+psycopg2-binary==2.9.9
+pika==1.3.2
+kombu==5.4.2
+
+# System monitoring and utilities
+psutil==6.1.0
+colorlog==6.9.0
+pyfiglet==1.0.2
+PyYAML==6.0.2
+PyJWT==2.9.0
+pyOpenSSL==24.2.1
+pyotp==2.9.0
+
+# TAK-specific functionality
+pytak==6.3.2
+protobuf==5.28.3
+meshtastic==2.7.0
+unishox2-py3==1.0.0
+
+# Data processing and parsing
+beautifulsoup4==4.12.3
+lxml==5.3.0
+simplekml==1.3.6
+tldextract==5.1.2
+
+# External data sources (ADSB, AIS)
+adsbxcot==6.0.4
+aiscot==5.2.1
+
+# APK analysis for packages
+androguard==4.1.2
+
+# Geographic calculations
+pygc==1.3.0
+
+# Video streaming support
+yt-dlp
+
+# Development and testing
+pytest==8.3.3
+pytest-cov==6.0.0
+
+# Additional dependencies for production
+Werkzeug
+requests
+click
+itsdangerous
+Jinja2
+MarkupSafe
+WTForms
+email-validator
+passlib
+bcrypt
+cryptography
+qrcode
+Pillow
