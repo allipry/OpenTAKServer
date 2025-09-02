@@ -37,29 +37,48 @@ export RABBITMQ_USER=${RABBITMQ_USER:-ots}
 export RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-changeme}
 export RABBITMQ_VHOST=${RABBITMQ_VHOST:-ots}
 
-# Wait for database with timeout (optional - the fixed server can run without it)
+# Wait for database with timeout
 echo "Checking database connectivity..."
-timeout=30
+timeout=60
 counter=0
 until python3 -c "
 import psycopg2
+import os
+import sys
+
 try:
+    # Use environment variables directly to avoid shell escaping issues
     conn = psycopg2.connect(
-        host='$POSTGRES_HOST', 
-        port=$POSTGRES_PORT, 
-        database='$POSTGRES_DB', 
-        user='$POSTGRES_USER', 
-        password='$POSTGRES_PASSWORD'
+        host=os.environ.get('POSTGRES_HOST', 'postgresql'), 
+        port=int(os.environ.get('POSTGRES_PORT', '5432')), 
+        database=os.environ.get('POSTGRES_DB', 'opentakserver'), 
+        user=os.environ.get('POSTGRES_USER', 'ots'), 
+        password=os.environ.get('POSTGRES_PASSWORD', 'changeme')
     )
+    
+    # Test the connection with a simple query
+    cursor = conn.cursor()
+    cursor.execute('SELECT 1')
+    result = cursor.fetchone()
+    cursor.close()
     conn.close()
-    print('Database connection successful')
-except Exception as e:
+    
+    if result:
+        print('Database connection successful')
+    else:
+        print('Database connected but query failed')
+        sys.exit(1)
+        
+except psycopg2.OperationalError as e:
     print(f'Database connection failed: {e}')
-    exit(1)
+    sys.exit(1)
+except Exception as e:
+    print(f'Database error: {e}')
+    sys.exit(1)
 " 2>/dev/null; do
     if [ $counter -ge $timeout ]; then
-        echo "Database connection timeout after ${timeout} seconds - continuing without database"
-        break
+        echo "Database connection timeout after ${timeout} seconds"
+        exit 1
     fi
     echo "Database not ready, waiting... ($counter/$timeout)"
     sleep 2
@@ -102,7 +121,12 @@ openssl req -x509 -newkey rsa:2048 -keyout /app/certs/server-key.pem -out /app/c
     -days 365 -nodes -subj "/C=US/ST=State/L=City/O=OpenTAKServer/CN=localhost" \
     2>/dev/null || echo "Certificate creation failed, continuing..."
 
-# Start the fixed OpenTAKServer
-echo "Starting Fixed OpenTAKServer API on port 8080..."
+# Start the integrated OpenTAKServer with enhanced API
+echo "Starting integrated OpenTAKServer with enhanced API on port 8080..."
 cd /app
-python3 -m opentakserver.api_server.server
+
+# Set the listener port for the integrated server
+export OTS_LISTENER_PORT=8080
+
+# Run the integrated OpenTAKServer with enhanced API
+exec python3 -m opentakserver.app
