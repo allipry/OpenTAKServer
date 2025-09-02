@@ -1,0 +1,112 @@
+{
+  "timestamp": "2025-09-01T20:47:29.427670",
+  "total_suites": 7,
+  "successful_suites": 0,
+  "total_tests": 0,
+  "total_passed": 0,
+  "total_failed": 0,
+  "total_skipped": 0,
+  "total_errors": 0,
+  "success_rate": 0,
+  "total_duration": 1.4865567684173584,
+  "results": [
+    {
+      "test_file": "test_hostname_resolver.py",
+      "description": "Hostname Resolution Service Tests",
+      "success": false,
+      "duration": 0.22611093521118164,
+      "stats": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "errors": 0
+      },
+      "stdout": "",
+      "stderr": "ImportError while loading conftest '/Users/allisonpryor/Code/MAGKAdmin/MAGK-Admin/OpenTAKServer/tests/conftest.py'.\nconftest.py:3: in <module>\n    from flask_security import hash_password\nE   ModuleNotFoundError: No module named 'flask_security'\n"
+    },
+    {
+      "test_file": "test_qr_code_generation.py",
+      "description": "QR Code Format and Validation Tests",
+      "success": false,
+      "duration": 0.2186880111694336,
+      "stats": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "errors": 0
+      },
+      "stdout": "",
+      "stderr": "ImportError while loading conftest '/Users/allisonpryor/Code/MAGKAdmin/MAGK-Admin/OpenTAKServer/tests/conftest.py'.\nconftest.py:3: in <module>\n    from flask_security import hash_password\nE   ModuleNotFoundError: No module named 'flask_security'\n"
+    },
+    {
+      "test_file": "test_qr_decoding_validation.py",
+      "description": "QR Code Decoding and Library Tests",
+      "success": false,
+      "duration": 0.20813894271850586,
+      "stats": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "errors": 0
+      },
+      "stdout": "",
+      "stderr": "ImportError while loading conftest '/Users/allisonpryor/Code/MAGKAdmin/MAGK-Admin/OpenTAKServer/tests/conftest.py'.\nconftest.py:3: in <module>\n    from flask_security import hash_password\nE   ModuleNotFoundError: No module named 'flask_security'\n"
+    },
+    {
+      "test_file": "test_qr_api_integration.py",
+      "description": "QR Code API Integration Tests",
+      "success": false,
+      "duration": 0.20896100997924805,
+      "stats": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "errors": 0
+      },
+      "stdout": "",
+      "stderr": "ImportError while loading conftest '/Users/allisonpryor/Code/MAGKAdmin/MAGK-Admin/OpenTAKServer/tests/conftest.py'.\nconftest.py:3: in <module>\n    from flask_security import hash_password\nE   ModuleNotFoundError: No module named 'flask_security'\n"
+    },
+    {
+      "test_file": "test_user_creation.py",
+      "description": "User Creation Functionality Tests",
+      "success": false,
+      "duration": 0.20201802253723145,
+      "stats": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "errors": 0
+      },
+      "stdout": "",
+      "stderr": "ImportError while loading conftest '/Users/allisonpryor/Code/MAGKAdmin/MAGK-Admin/OpenTAKServer/tests/conftest.py'.\nconftest.py:3: in <module>\n    from flask_security import hash_password\nE   ModuleNotFoundError: No module named 'flask_security'\n"
+    },
+    {
+      "test_file": "test_deployment_scenarios.py",
+      "description": "Deployment Scenario Tests",
+      "success": false,
+      "duration": 0.21692109107971191,
+      "stats": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "errors": 0
+      },
+      "stdout": "",
+      "stderr": "ImportError while loading conftest '/Users/allisonpryor/Code/MAGKAdmin/MAGK-Admin/OpenTAKServer/tests/conftest.py'.\nconftest.py:3: in <module>\n    from flask_security import hash_password\nE   ModuleNotFoundError: No module named 'flask_security'\n"
+    },
+    {
+      "test_file": "test_error_handling.py",
+      "description": "Error Handling and Edge Case Tests",
+      "success": false,
+      "duration": 0.2057187557220459,
+      "stats": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "errors": 0
+      },
+      "stdout": "",
+      "stderr": "ImportError while loading conftest '/Users/allisonpryor/Code/MAGKAdmin/MAGK-Admin/OpenTAKServer/tests/conftest.py'.\nconftest.py:3: in <module>\n    from flask_security import hash_password\nE   ModuleNotFoundError: No module named 'flask_security'\n"
+    }
+  ]
+}
