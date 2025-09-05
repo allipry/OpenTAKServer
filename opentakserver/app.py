@@ -208,6 +208,11 @@ def create_app():
     from opentakserver.blueprints.scheduled_jobs import scheduler_blueprint
     app.register_blueprint(scheduler_blueprint)
 
+    # Register enhanced API blueprint
+    from opentakserver.blueprints.enhanced_api import enhanced_api, register_socketio_events
+    app.register_blueprint(enhanced_api)
+    register_socketio_events(socketio)
+
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)
 
     return app
