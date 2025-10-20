@@ -5,7 +5,7 @@ Provides direct database access for team information
 """
 
 import logging
-from opentakserver.database_utils import get_database_connection
+from opentakserver.magk.services.database import get_database_connection
 
 logger = logging.getLogger(__name__)
 
