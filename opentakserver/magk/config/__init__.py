@@ -1,0 +1,1 @@
+# MAGK Configuration Module

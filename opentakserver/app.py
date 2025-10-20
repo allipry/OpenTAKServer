@@ -103,11 +103,61 @@ def init_extensions(app):
     socketio_logger = False
     if app.config.get("DEBUG"):
         socketio_logger = logger
-    socketio.init_app(app, logger=socketio_logger, ping_timeout=1, message_queue="amqp://" + app.config.get("OTS_RABBITMQ_SERVER_ADDRESS"))
+    socketio.init_app(app, logger=socketio_logger, ping_timeout=1, message_queue=f"amqp://{app.config.get('OTS_RABBITMQ_USERNAME')}:{app.config.get('OTS_RABBITMQ_PASSWORD')}@{app.config.get('OTS_RABBITMQ_SERVER_ADDRESS')}/{app.config.get('OTS_RABBITMQ_VHOST')}")
 
-    rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")))
-    channel = rabbit_connection.channel()
-    channel.exchange_declare('cot', durable=True, exchange_type='fanout')
+    # Debug RabbitMQ configuration
+    print(f"DEBUG: RabbitMQ Host: {app.config.get('OTS_RABBITMQ_SERVER_ADDRESS')}")
+    print(f"DEBUG: RabbitMQ Port: {app.config.get('OTS_RABBITMQ_PORT', 5672)}")
+    print(f"DEBUG: RabbitMQ VHost: {app.config.get('OTS_RABBITMQ_VHOST', '/')}")
+    print(f"DEBUG: RabbitMQ Username: {app.config.get('OTS_RABBITMQ_USERNAME', 'guest')}")
+    print(f"DEBUG: RabbitMQ Password: {'***' if app.config.get('OTS_RABBITMQ_PASSWORD') else 'None'}")
+    
+    # RabbitMQ connection with retry logic
+    max_retries = 5
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"INFO: Attempting RabbitMQ connection (attempt {attempt + 1}/{max_retries})")
+            
+            connection_params = pika.ConnectionParameters(
+                host=app.config.get("OTS_RABBITMQ_SERVER_ADDRESS", "localhost"),
+                port=int(app.config.get("OTS_RABBITMQ_PORT", 5672)),
+                virtual_host=app.config.get("OTS_RABBITMQ_VHOST", "/"),
+                credentials=pika.PlainCredentials(
+                    app.config.get("OTS_RABBITMQ_USERNAME", "guest"),
+                    app.config.get("OTS_RABBITMQ_PASSWORD", "guest")
+                ),
+                connection_attempts=3,
+                retry_delay=1,
+                socket_timeout=10,
+                heartbeat=600,
+                blocked_connection_timeout=300
+            )
+            
+            rabbit_connection = pika.BlockingConnection(connection_params)
+            channel = rabbit_connection.channel()
+            
+            # Test the connection by declaring exchanges
+            channel.exchange_declare('cot', durable=True, exchange_type='fanout')
+            print("SUCCESS: RabbitMQ connection established and tested!")
+            break
+            
+        except pika.exceptions.AMQPConnectionError as e:
+            print(f"WARNING: RabbitMQ connection attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                print(f"INFO: Retrying in {retry_delay} seconds...")
+                import time
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+            else:
+                print(f"ERROR: Failed to connect to RabbitMQ after {max_retries} attempts")
+                print(f"ERROR: Connection details - Host: {app.config.get('OTS_RABBITMQ_SERVER_ADDRESS', 'localhost')}, Port: {app.config.get('OTS_RABBITMQ_PORT', 5672)}, VHost: {app.config.get('OTS_RABBITMQ_VHOST', '/')}, User: {app.config.get('OTS_RABBITMQ_USERNAME', 'guest')}")
+                raise
+        except Exception as e:
+            print(f"ERROR: Unexpected RabbitMQ connection error: {e}")
+            if attempt == max_retries - 1:
+                raise
     channel.exchange_declare('dms', durable=True, exchange_type='direct')
     channel.exchange_declare('chatrooms', durable=True, exchange_type='direct')
     channel.queue_declare(queue='cot_controller')
@@ -157,11 +207,13 @@ def setup_logging(app):
 def create_app():
     app = Flask(__name__)
     app.config.from_object(DefaultConfig)
+    
     setup_logging(app)
 
     # Load config.yml if it exists
     if os.path.exists(os.path.join(app.config.get("OTS_DATA_FOLDER"), "config.yml")):
         app.config.from_file(os.path.join(app.config.get("OTS_DATA_FOLDER"), "config.yml"), load=yaml.safe_load)
+        print("DEBUG: Loaded config.yml file")
     else:
         # First run, created config.yml based on default settings
         logger.info("Creating config.yml")
@@ -174,6 +226,47 @@ def create_app():
                 elif option.isupper():
                     conf[option] = DefaultConfig.__dict__[option]
             config.write(yaml.safe_dump(conf))
+
+    # Load environment variables into Flask config AFTER config.yml
+    # This ensures environment variables override both default config and config.yml
+    env_vars_loaded = 0
+    for key, value in os.environ.items():
+        if key.startswith('OTS_') or key in ['POSTGRES_HOST', 'POSTGRES_PORT', 'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'DATABASE_URL', 'SQLALCHEMY_DATABASE_URI']:
+            app.config[key] = value
+            env_vars_loaded += 1
+    
+    # Ensure DATABASE_URL is used as SQLALCHEMY_DATABASE_URI if available
+    if os.environ.get('DATABASE_URL') and not os.environ.get('SQLALCHEMY_DATABASE_URI'):
+        app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+        env_vars_loaded += 1
+        print(f"INFO: Using DATABASE_URL as SQLALCHEMY_DATABASE_URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    elif os.environ.get('SQLALCHEMY_DATABASE_URI'):
+        app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('SQLALCHEMY_DATABASE_URI')
+        print(f"INFO: Using SQLALCHEMY_DATABASE_URI from environment: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    
+    print(f"INFO: Loaded {env_vars_loaded} environment variables into Flask config")
+    
+    # Validate critical configuration values
+    critical_configs = {
+        'OTS_RABBITMQ_SERVER_ADDRESS': app.config.get('OTS_RABBITMQ_SERVER_ADDRESS'),
+        'OTS_RABBITMQ_USERNAME': app.config.get('OTS_RABBITMQ_USERNAME'),
+        'OTS_RABBITMQ_PASSWORD': app.config.get('OTS_RABBITMQ_PASSWORD'),
+        'OTS_RABBITMQ_VHOST': app.config.get('OTS_RABBITMQ_VHOST'),
+        'OTS_RABBITMQ_PORT': app.config.get('OTS_RABBITMQ_PORT')
+    }
+    
+    missing_configs = [key for key, value in critical_configs.items() if not value]
+    if missing_configs:
+        print(f"ERROR: Missing critical configuration: {missing_configs}")
+        print("INFO: Using default values for missing configuration")
+    
+    # Debug: Print RabbitMQ configuration after all config loading
+    print(f"INFO: RabbitMQ Configuration:")
+    print(f"  Server: {app.config.get('OTS_RABBITMQ_SERVER_ADDRESS', 'localhost')}")
+    print(f"  Username: {app.config.get('OTS_RABBITMQ_USERNAME', 'guest')}")
+    print(f"  VHost: {app.config.get('OTS_RABBITMQ_VHOST', '/')}")
+    print(f"  Port: {app.config.get('OTS_RABBITMQ_PORT', 5672)}")
+    print(f"  Password: {'***' if app.config.get('OTS_RABBITMQ_PASSWORD') else 'None'}")
 
     # Try to set the MediaMTX token
     if app.config.get("OTS_MEDIAMTX_ENABLE"):
@@ -196,6 +289,12 @@ def create_app():
     from opentakserver.blueprints.marti_api import marti_blueprint
     app.register_blueprint(marti_blueprint)
 
+    # Note: Marti Authentication and Registration APIs now loaded via MAGK extension below
+    
+    # Register API deprecation notices for non-Marti endpoints
+    from opentakserver.api_deprecation_notice import deprecation_bp
+    app.register_blueprint(deprecation_bp)
+
     from opentakserver.blueprints.ots_api import ots_api
     app.register_blueprint(ots_api)
 
@@ -208,12 +307,21 @@ def create_app():
     from opentakserver.blueprints.scheduled_jobs import scheduler_blueprint
     app.register_blueprint(scheduler_blueprint)
 
-    # Register enhanced API blueprint
-    from opentakserver.blueprints.enhanced_api import enhanced_api, register_socketio_events
-    app.register_blueprint(enhanced_api)
-    register_socketio_events(socketio)
-
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)
+
+    # Apply custom integrations
+    # MAGK Extension Integration (volume-based, no patching)
+    try:
+        if os.environ.get('MAGK_ENABLED', 'true').lower() == 'true':
+            from opentakserver.magk import init_magk
+            app = init_magk(app)
+            logger.info("✅ MAGK extension initialized successfully")
+    except ImportError as e:
+        logger.warning(f"⚠️  MAGK extension not found: {e}")
+    except Exception as e:
+        logger.error(f"❌ MAGK extension failed to load: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
     return app
 
