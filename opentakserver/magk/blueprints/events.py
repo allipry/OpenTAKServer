@@ -5,7 +5,7 @@ Manages events/operations for the TAK Server registration system
 """
 
 from flask import Blueprint, jsonify, request
-from opentakserver.database_utils import get_database_connection
+from opentakserver.magk.services.database import get_database_connection
 import psycopg2
 import logging
 from datetime import datetime
