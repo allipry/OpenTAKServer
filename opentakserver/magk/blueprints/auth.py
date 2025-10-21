@@ -56,18 +56,25 @@ def marti_login():
             logger.info(f"Marti Auth: Found user {username}, checking password")
             
             try:
+                print(f"Verifying password for user {username}", flush=True)
+                print(f"Password hash starts with: {user.password[:50]}", flush=True)
+                
                 # Use Flask-Security's verify_password (imported at top) for consistency
                 password_valid = verify_password(password, user.password)
+                print(f"verify_password result: {password_valid}", flush=True)
                 logger.info(f"Marti Auth: Password verification result: {password_valid}")
             except Exception as e:
+                print(f"verify_password failed: {e}", flush=True)
                 logger.error(f"Marti Auth: Password verification error: {e}")
                 # Fallback to passlib directly
                 try:
                     from passlib.context import CryptContext
                     pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
                     password_valid = pwd_context.verify(password, user.password)
+                    print(f"Passlib verification result: {password_valid}", flush=True)
                     logger.info(f"Marti Auth: Passlib verification result: {password_valid}")
                 except Exception as e2:
+                    print(f"Passlib also failed: {e2}", flush=True)
                     logger.error(f"Marti Auth: Passlib verification also failed: {e2}")
                     password_valid = False
         else:
