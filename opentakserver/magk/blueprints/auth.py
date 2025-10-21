@@ -45,18 +45,17 @@ def marti_login():
         
         # Find user using Flask-Security datastore
         from flask import current_app
-        from werkzeug.security import check_password_hash
         user_datastore = current_app.security.datastore
         user = user_datastore.find_user(username=username)
         
-        # Verify password using werkzeug (Flask-Security compatible)
+        # Verify password using Flask-Security's password utility
         password_valid = False
         if user:
             logger.info(f"Marti Auth: Found user {username}, checking password")
             
             try:
-                # Use werkzeug's check_password_hash directly (more reliable)
-                password_valid = check_password_hash(user.password, password)
+                # Use Flask-Security's verify_password for consistency with hash_password
+                password_valid = current_app.security.password_util.verify(password, user.password)
                 logger.info(f"Marti Auth: Password verification result: {password_valid}")
             except Exception as e:
                 logger.error(f"Marti Auth: Password verification error: {e}")
