@@ -396,13 +396,14 @@ def register_participant():
         
         # Create user using Flask-Security's user_datastore (proper way)
         from flask import current_app
+        from flask_security import hash_password
         user_datastore = current_app.security.datastore
         
-        # Create user with Flask-Security (only using fields that exist in the User model)
+        # Create user with Flask-Security (hash password explicitly)
         user = user_datastore.create_user(
             username=mapped_data['callsign'],
             email=mapped_data['email'],
-            password=temp_password,  # Flask-Security will hash this properly
+            password=hash_password(temp_password),  # Hash password explicitly
             active=True
         )
         

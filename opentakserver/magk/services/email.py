@@ -300,3 +300,182 @@ iOS (iTAK) SETUP INSTRUCTIONS:
 
 # Global email service instance
 email_service = EmailService()
+ 
+   def send_password_reset_email(self, email, username, reset_url, expires_hours=24):
+        """
+        Send password reset email with secure reset link
+        """
+        try:
+            # Create message
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = f"Password Reset Request - {self.server_name}"
+            msg['From'] = f"{self.from_name} <{self.from_email}>"
+            msg['To'] = email
+            msg['Reply-To'] = self.reply_to_email
+            
+            # Create email content
+            text_content = self._create_password_reset_text(username, reset_url, expires_hours)
+            html_content = self._create_password_reset_html(username, reset_url, expires_hours)
+            
+            # Attach parts
+            text_part = MIMEText(text_content, 'plain')
+            html_part = MIMEText(html_content, 'html')
+            
+            msg.attach(text_part)
+            msg.attach(html_part)
+            
+            # Send email
+            success = self._send_email(msg)
+            
+            if success:
+                logger.info(f"Password reset email sent successfully to {email} for user {username}")
+                return True
+            else:
+                logger.error(f"Failed to send password reset email to {email} for user {username}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error sending password reset email to {email}: {e}")
+            return False
+    
+    def _create_password_reset_text(self, username, reset_url, expires_hours):
+        """Create plain text password reset email"""
+        return f"""
+Password Reset Request
+
+Hello {username},
+
+We received a request to reset your password for {self.server_name}.
+
+To reset your password, click the link below or copy and paste it into your browser:
+
+{reset_url}
+
+This link will expire in {expires_hours} hours.
+
+If you did not request a password reset, please ignore this email. Your password will remain unchanged.
+
+For security reasons:
+- Never share your password reset link with anyone
+- The link can only be used once
+- If the link expires, you can request a new one
+
+If you have any questions or concerns, please contact your administrator.
+
+Best regards,
+{self.server_name} Team
+
+---
+This is an automated message. Please do not reply to this email.
+"""
+    
+    def _create_password_reset_html(self, username, reset_url, expires_hours):
+        """Create HTML password reset email"""
+        return f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }}
+        .header {{
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            border-radius: 10px 10px 0 0;
+        }}
+        .content {{
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 0 0 10px 10px;
+        }}
+        .button {{
+            display: inline-block;
+            padding: 15px 30px;
+            background: #4CAF50;
+            color: white !important;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+            font-weight: bold;
+        }}
+        .warning {{
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+        }}
+        .security-note {{
+            background: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px;
+            margin: 20px 0;
+        }}
+        .footer {{
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔐 Password Reset Request</h1>
+        <p>{self.server_name}</p>
+    </div>
+    
+    <div class="content">
+        <p>Hello <strong>{username}</strong>,</p>
+        
+        <p>We received a request to reset your password for {self.server_name}.</p>
+        
+        <p style="text-align: center;">
+            <a href="{reset_url}" class="button">Reset Your Password</a>
+        </p>
+        
+        <p style="text-align: center; color: #666; font-size: 14px;">
+            Or copy and paste this link into your browser:<br>
+            <code style="background: #e9ecef; padding: 5px 10px; border-radius: 3px; display: inline-block; margin-top: 10px; word-break: break-all;">
+                {reset_url}
+            </code>
+        </p>
+        
+        <div class="warning">
+            <strong>⏰ Time Sensitive:</strong> This link will expire in <strong>{expires_hours} hours</strong>.
+        </div>
+        
+        <div class="security-note">
+            <strong>🛡️ Security Notes:</strong>
+            <ul>
+                <li>If you did not request a password reset, please ignore this email</li>
+                <li>Never share your password reset link with anyone</li>
+                <li>The link can only be used once</li>
+                <li>If the link expires, you can request a new one</li>
+            </ul>
+        </div>
+        
+        <p>If you have any questions or concerns, please contact your administrator.</p>
+        
+        <p>Best regards,<br>
+        <strong>{self.server_name} Team</strong></p>
+    </div>
+    
+    <div class="footer">
+        <p>This is an automated message. Please do not reply to this email.</p>
+        <p>&copy; {datetime.now().year} {self.server_name}. All rights reserved.</p>
+    </div>
+</body>
+</html>
+"""

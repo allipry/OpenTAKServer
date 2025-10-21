@@ -45,25 +45,22 @@ def marti_login():
         
         # Find user using Flask-Security datastore
         from flask import current_app
+        from werkzeug.security import check_password_hash
         user_datastore = current_app.security.datastore
         user = user_datastore.find_user(username=username)
         
-        # Handle both hashed and plaintext passwords (for compatibility)
+        # Verify password using werkzeug (Flask-Security compatible)
         password_valid = False
         if user:
             logger.info(f"Marti Auth: Found user {username}, checking password")
-            logger.info(f"Marti Auth: User password hash: {user.password[:20]}...")
-            logger.info(f"Marti Auth: Input password: {password}")
             
             try:
-                # Try hashed password verification first
-                password_valid = verify_password(password, user.password)
-                logger.info(f"Marti Auth: Hashed password verification result: {password_valid}")
+                # Use werkzeug's check_password_hash directly (more reliable)
+                password_valid = check_password_hash(user.password, password)
+                logger.info(f"Marti Auth: Password verification result: {password_valid}")
             except Exception as e:
-                logger.info(f"Marti Auth: Hashed password verification failed: {e}")
-                # Fallback: check if password is stored as plaintext (legacy compatibility)
-                password_valid = (password == user.password)
-                logger.info(f"Marti Auth: Plaintext password verification result: {password_valid}")
+                logger.error(f"Marti Auth: Password verification error: {e}")
+                password_valid = False
         else:
             logger.warning(f"Marti Auth: User {username} not found in datastore")
         
