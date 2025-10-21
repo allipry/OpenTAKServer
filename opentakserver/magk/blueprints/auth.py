@@ -23,8 +23,10 @@ def marti_login():
     Authenticate user using Marti API format
     Follows Marti API pattern: /Marti/api/auth/login
     """
+    print("=== MARTI AUTH LOGIN CALLED ===", flush=True)
     try:
         data = request.get_json()
+        print(f"Login data received: {data}", flush=True)
         if not data:
             # Support form data for compatibility
             username = request.form.get('username')
