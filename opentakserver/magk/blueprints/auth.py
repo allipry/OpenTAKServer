@@ -50,6 +50,12 @@ def marti_login():
         user_datastore = current_app.security.datastore
         user = user_datastore.find_user(username=username)
         
+        print(f"User lookup result: {user}", flush=True)
+        if user:
+            print(f"User found: {user.username}, active: {user.active}", flush=True)
+        else:
+            print(f"User NOT found for username: {username}", flush=True)
+        
         # Verify password using Flask-Security's verify_password
         password_valid = False
         if user:
