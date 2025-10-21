@@ -297,11 +297,8 @@ iOS (iTAK) SETUP INSTRUCTIONS:
         except Exception as e:
             logger.error(f"SMTP connection test failed: {e}")
             return False
-
-# Global email service instance
-email_service = EmailService()
- 
-   def send_password_reset_email(self, email, username, reset_url, expires_hours=24):
+    
+    def send_password_reset_email(self, email, username, reset_url, expires_hours=24):
         """
         Send password reset email with secure reset link
         """
@@ -479,3 +476,7 @@ This is an automated message. Please do not reply to this email.
 </body>
 </html>
 """
+
+
+# Global email service instance
+email_service = EmailService()
