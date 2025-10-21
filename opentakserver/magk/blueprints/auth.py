@@ -27,6 +27,8 @@ def marti_login():
     try:
         data = request.get_json()
         print(f"Login data received: {data}", flush=True)
+        
+        print("About to extract username/password", flush=True)
         if not data:
             # Support form data for compatibility
             username = request.form.get('username')
@@ -139,6 +141,9 @@ def marti_login():
         return jsonify(response), 200
         
     except Exception as e:
+        print(f"=== EXCEPTION IN LOGIN: {e} ===", flush=True)
+        import traceback
+        print(traceback.format_exc(), flush=True)
         logger.error(f"Marti Auth: Login error: {e}")
         return jsonify({
             "version": "3",
