@@ -129,6 +129,13 @@ def request_password_reset():
         expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
         
         # Store reset token
+        import json as json_module
+        registration_data_json = json_module.dumps({
+            'type': 'password_reset',
+            'email': email,
+            'requested_at': datetime.now(timezone.utc).isoformat()
+        })
+        
         cursor.execute("""
             INSERT INTO registration_logs 
             (user_id, status, download_token, token_expires_at, registration_data, device_type)
@@ -138,7 +145,7 @@ def request_password_reset():
             'password_reset',
             reset_token,
             expires_at,
-            {'type': 'password_reset', 'email': email, 'requested_at': datetime.now(timezone.utc).isoformat()},
+            registration_data_json,
             'other'
         ))
         conn.commit()
@@ -179,11 +186,22 @@ def request_password_reset():
         }), 200
         
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"=== PASSWORD RESET ERROR ===", flush=True)
+        print(f"Error: {e}", flush=True)
+        print(f"Traceback:\n{error_details}", flush=True)
+        print(f"=== END ERROR ===", flush=True)
         logger.error(f"Password reset request error: {e}")
+        logger.error(error_details)
         return jsonify({
             "version": "3",
             "type": "com.bbn.marti.remote.exception.TakException",
-            "data": {"message": "Failed to process password reset request"},
+            "data": {
+                "message": "Failed to process password reset request",
+                "error": str(e),
+                "type": type(e).__name__
+            },
             "nodeId": "opentakserver-password"
         }), 500
 
