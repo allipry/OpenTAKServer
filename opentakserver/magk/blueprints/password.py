@@ -155,6 +155,13 @@ def request_password_reset():
         # Generate reset URL
         reset_url = f"https://{request.host}/reset-password?token={reset_token}"
         
+        print(f"=== PASSWORD RESET EMAIL ===", flush=True)
+        print(f"Email: {user.email}", flush=True)
+        print(f"Username: {user.username}", flush=True)
+        print(f"Token: {reset_token}", flush=True)
+        print(f"Reset URL: {reset_url}", flush=True)
+        print(f"=== END ===", flush=True)
+        
         # Send reset email
         try:
             from opentakserver.magk.services.email import email_service
@@ -168,8 +175,10 @@ def request_password_reset():
             
             if email_sent:
                 logger.info(f"Password reset email sent to: {email}")
+                print(f"✓ Email sent successfully to {email}", flush=True)
             else:
                 logger.error(f"Failed to send password reset email to: {email}")
+                print(f"✗ Email failed to send to {email}", flush=True)
         except Exception as e:
             logger.error(f"Error sending password reset email: {e}")
             # Don't fail the request if email fails - token is still valid
