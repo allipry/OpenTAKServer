@@ -152,8 +152,11 @@ def request_password_reset():
         cursor.close()
         conn.close()
         
-        # Generate reset URL
-        reset_url = f"https://{request.host}/reset-password?token={reset_token}"
+        # Generate reset URL using configured external host
+        import os
+        external_host = os.getenv('EXTERNAL_HOST', 'tak.magktech.com')
+        server_port = os.getenv('SERVER_PORT', '8443')
+        reset_url = f"https://{external_host}:{server_port}/reset-password?token={reset_token}"
         
         print(f"=== PASSWORD RESET EMAIL ===", flush=True)
         print(f"Email: {user.email}", flush=True)
