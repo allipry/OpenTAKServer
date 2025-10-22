@@ -442,12 +442,14 @@ This is an automated message. Please do not reply to this email.
             <a href="{reset_url}" class="button">Reset Your Password</a>
         </p>
         
-        <p style="text-align: center; color: #666; font-size: 14px;">
-            Or copy and paste this link into your browser:<br>
-            <code style="background: #e9ecef; padding: 5px 10px; border-radius: 3px; display: inline-block; margin-top: 10px; word-break: break-all;">
+        <div style="margin: 20px 0; padding: 15px; background: #e9ecef; border-radius: 5px;">
+            <p style="margin: 0 0 10px 0; color: #666; font-size: 14px;">
+                Or copy and paste this link into your browser:
+            </p>
+            <p style="margin: 0; word-break: break-all; font-size: 12px; color: #495057;">
                 {reset_url}
-            </code>
-        </p>
+            </p>
+        </div>
         
         <div class="warning">
             <strong>⏰ Time Sensitive:</strong> This link will expire in <strong>{expires_hours} hours</strong>.
