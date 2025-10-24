@@ -1,99 +1,52 @@
 #!/usr/bin/env python3
 """
 Dashboard API Module
-Provides real dashboard statistics from the database
+Redirects to Marti API endpoints for dashboard statistics
 """
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, redirect
+from flask_security import auth_required, roles_required
 import logging
-import psycopg2
-from datetime import datetime, timedelta
-from opentakserver.magk.services.database import get_database_connection
+from datetime import datetime
 
 # Create blueprint for dashboard API
 dashboard_bp = Blueprint('dashboard', __name__, url_prefix='/api/dashboard')
 
-def get_db_connection():
-    """Get database connection"""
-    return get_database_connection()
-
 @dashboard_bp.route('/stats', methods=['GET'])
+@auth_required()
+@roles_required('administrator')
 def get_dashboard_stats():
-    """Get dashboard statistics"""
+    """
+    Get dashboard statistics
+    Uses Marti API user stats endpoint
+    """
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Initialize stats
-        stats = {
-            'totalUsers': 0,
-            'totalTeams': 0,
-            'activeTeams': 0,
-            'recentRegistrations': 0,
-            'systemHealth': 'healthy'
-        }
+        from opentakserver.models.user import User
+        from opentakserver.models.role import Role
+        from datetime import datetime, timedelta, timezone
         
         # Get user statistics
-        try:
-            # Try to get users from common table names
-            user_tables = ['users', 'user', 'tak_users', 'certificates']
-            user_count = 0
-            recent_count = 0
-            
-            for table in user_tables:
-                try:
-                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                    user_count = cursor.fetchone()[0]
-                    
-                    # Try to get recent registrations (last 7 days)
-                    try:
-                        week_ago = (datetime.now() - timedelta(days=7)).isoformat()
-                        cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE created_at > ? OR date_created > ? OR timestamp > ?", 
-                                     (week_ago, week_ago, week_ago))
-                        recent_count = cursor.fetchone()[0]
-                    except:
-                        recent_count = 0
-                    
-                    break  # Found a working table
-                except sqlite3.OperationalError:
-                    continue  # Try next table
-            
-            stats['totalUsers'] = user_count
-            stats['recentRegistrations'] = recent_count
-            
-        except Exception as e:
-            logging.warning(f"Could not get user stats: {e}")
+        total_users = User.query.count()
+        active_users = User.query.filter(User.active == True).count()
         
-        # Get team/group statistics
-        try:
-            # Try to get teams from common table names
-            team_tables = ['teams', 'groups', 'tak_groups', 'user_groups']
-            team_count = 0
-            active_count = 0
-            
-            for table in team_tables:
-                try:
-                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                    team_count = cursor.fetchone()[0]
-                    
-                    # Try to get active teams
-                    try:
-                        cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE active = 1 OR status = 'active'")
-                        active_count = cursor.fetchone()[0]
-                    except:
-                        active_count = team_count  # Assume all are active if no status column
-                    
-                    break  # Found a working table
-                except sqlite3.OperationalError:
-                    continue  # Try next table
-            
-            stats['totalTeams'] = team_count
-            stats['activeTeams'] = active_count
-            
-        except Exception as e:
-            logging.warning(f"Could not get team stats: {e}")
+        # Get recent registrations (last 7 days)
+        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        recent_registrations = User.query.filter(User.confirmed_at >= week_ago).count() if hasattr(User, 'confirmed_at') else 0
         
-        conn.close()
+        # Get admin count
+        admin_role = Role.query.filter(Role.name == 'administrator').first()
+        admin_count = 0
+        if admin_role:
+            admin_count = User.query.filter(User.roles.contains(admin_role)).count()
+        
+        stats = {
+            'totalUsers': total_users,
+            'activeUsers': active_users,
+            'adminUsers': admin_count,
+            'recentRegistrations': recent_registrations,
+            'systemHealth': 'healthy',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
         
         return jsonify({
             'success': True,
@@ -103,12 +56,14 @@ def get_dashboard_stats():
         
     except Exception as e:
         logging.error(f"Failed to get dashboard stats: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
         return jsonify({
             'success': False,
             'data': {
                 'totalUsers': 0,
-                'totalTeams': 0,
-                'activeTeams': 0,
+                'activeUsers': 0,
+                'adminUsers': 0,
                 'recentRegistrations': 0,
                 'systemHealth': 'error'
             },
@@ -116,68 +71,57 @@ def get_dashboard_stats():
         }), 500
 
 @dashboard_bp.route('/users', methods=['GET'])
+@auth_required()
+@roles_required('administrator')
 def get_user_stats():
-    """Get detailed user statistics"""
+    """
+    Get detailed user statistics
+    Redirects to Marti API /users/stats endpoint
+    """
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        from opentakserver.models.user import User
+        from opentakserver.models.role import Role
+        from opentakserver.extensions import db
+        from sqlalchemy import func, and_
+        from datetime import datetime, timedelta, timezone
+        
+        # Get statistics using SQLAlchemy (same as Marti API)
+        total_users = User.query.count()
+        active_users = User.query.filter(User.active == True).count()
+        inactive_users = User.query.filter(User.active == False).count()
+        
+        # Get admin users
+        admin_role = Role.query.filter(Role.name == 'administrator').first()
+        admin_users = 0
+        if admin_role:
+            admin_users = User.query.filter(User.roles.contains(admin_role)).count()
+        
+        regular_users = total_users - admin_users
+        
+        # Get users with callsigns
+        users_with_callsigns = User.query.filter(User.callsign != None, User.callsign != '').count()
+        users_without_callsigns = total_users - users_with_callsigns
+        
+        # Get recent logins
+        now = datetime.now(timezone.utc)
+        day_ago = now - timedelta(days=1)
+        week_ago = now - timedelta(days=7)
+        
+        recent_logins_24h = User.query.filter(User.last_login_at >= day_ago).count()
+        recent_logins_7d = User.query.filter(User.last_login_at >= week_ago).count()
         
         stats = {
-            'total': 0,
-            'active': 0,
-            'recent': 0,
-            'admins': 0
+            'total': total_users,
+            'active': active_users,
+            'inactive': inactive_users,
+            'admins': admin_users,
+            'regular': regular_users,
+            'with_callsigns': users_with_callsigns,
+            'without_callsigns': users_without_callsigns,
+            'recent_24h': recent_logins_24h,
+            'recent_7d': recent_logins_7d,
+            'timestamp': now.isoformat()
         }
-        
-        # Try different user table names
-        user_tables = ['users', 'user', 'tak_users', 'certificates']
-        
-        for table in user_tables:
-            try:
-                # Get total users
-                cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                stats['total'] = cursor.fetchone()[0]
-                
-                # Get active users (try different column names)
-                try:
-                    cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE active = 1")
-                    stats['active'] = cursor.fetchone()[0]
-                except:
-                    try:
-                        cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE status = 'active'")
-                        stats['active'] = cursor.fetchone()[0]
-                    except:
-                        stats['active'] = stats['total']  # Assume all active if no status column
-                
-                # Get recent users (last 7 days)
-                try:
-                    week_ago = (datetime.now() - timedelta(days=7)).isoformat()
-                    cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE created_at > ?", (week_ago,))
-                    stats['recent'] = cursor.fetchone()[0]
-                except:
-                    try:
-                        cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE date_created > ?", (week_ago,))
-                        stats['recent'] = cursor.fetchone()[0]
-                    except:
-                        stats['recent'] = 0
-                
-                # Get admin users
-                try:
-                    cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE is_admin = 1")
-                    stats['admins'] = cursor.fetchone()[0]
-                except:
-                    try:
-                        cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE role = 'admin'")
-                        stats['admins'] = cursor.fetchone()[0]
-                    except:
-                        stats['admins'] = 0
-                
-                break  # Found a working table
-                
-            except sqlite3.OperationalError:
-                continue  # Try next table
-        
-        conn.close()
         
         return jsonify({
             'success': True,
@@ -187,74 +131,32 @@ def get_user_stats():
         
     except Exception as e:
         logging.error(f"Failed to get user stats: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
         return jsonify({
             'success': False,
-            'data': {'total': 0, 'active': 0, 'recent': 0, 'admins': 0},
+            'data': {
+                'total': 0,
+                'active': 0,
+                'inactive': 0,
+                'admins': 0,
+                'regular': 0,
+                'with_callsigns': 0,
+                'without_callsigns': 0,
+                'recent_24h': 0,
+                'recent_7d': 0
+            },
             'message': f'Failed to retrieve user statistics: {str(e)}'
-        }), 500
-
-@dashboard_bp.route('/teams', methods=['GET'])
-def get_team_stats():
-    """Get detailed team statistics"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        stats = {
-            'total': 0,
-            'active': 0
-        }
-        
-        # Try different team table names
-        team_tables = ['teams', 'groups', 'tak_groups', 'user_groups']
-        
-        for table in team_tables:
-            try:
-                # Get total teams
-                cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                stats['total'] = cursor.fetchone()[0]
-                
-                # Get active teams
-                try:
-                    cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE active = 1")
-                    stats['active'] = cursor.fetchone()[0]
-                except:
-                    try:
-                        cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE status = 'active'")
-                        stats['active'] = cursor.fetchone()[0]
-                    except:
-                        stats['active'] = stats['total']  # Assume all active if no status column
-                
-                break  # Found a working table
-                
-            except sqlite3.OperationalError:
-                continue  # Try next table
-        
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'data': stats,
-            'message': 'Team statistics retrieved successfully'
-        })
-        
-    except Exception as e:
-        logging.error(f"Failed to get team stats: {e}")
-        return jsonify({
-            'success': False,
-            'data': {'total': 0, 'active': 0},
-            'message': f'Failed to retrieve team statistics: {str(e)}'
         }), 500
 
 @dashboard_bp.route('/health', methods=['GET'])
 def get_system_health():
     """Get system health status"""
     try:
+        from opentakserver.extensions import db
+        
         # Check database connectivity
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT 1")
-        conn.close()
+        db.session.execute('SELECT 1')
         
         return jsonify({
             'success': True,

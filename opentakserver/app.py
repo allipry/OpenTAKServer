@@ -39,7 +39,7 @@ from flask_cors import CORS
 
 from flask_security import Security, SQLAlchemyUserDatastore, hash_password, uia_username_mapper, uia_email_mapper
 from flask_security.models import fsqla_v3 as fsqla
-from flask_security.signals import user_registered
+from flask_security.signals import user_registered, user_authenticated
 
 import opentakserver
 from opentakserver.extensions import logger, db, socketio, mail, apscheduler
@@ -346,6 +346,64 @@ def user_registered_sighandler(app, user, confirmation_token, **kwargs):
         name="user", permissions={"user-read", "user-write"}
     )
     app.security.datastore.add_role_to_user(user, default_role)
+    
+    # Log user registration activity
+    try:
+        from opentakserver.magk.models.activity_log import ActivityLog
+        from flask import request
+        
+        ActivityLog.log_activity(
+            activity_type='user_registered',
+            description=f'New user registered: {user.username}',
+            user_id=user.id,
+            ip_address=request.remote_addr if request else None,
+            user_agent=request.headers.get('User-Agent') if request else None,
+            request_method='POST',
+            request_path='/register',
+            status_code=201,
+            metadata={
+                'email': user.email,
+                'confirmation_required': confirmation_token is not None
+            },
+            resource_type='user',
+            resource_id=user.id,
+            success=True
+        )
+        logger.info(f"Activity logged: User registration for {user.username}")
+    except Exception as e:
+        logger.error(f"Failed to log user registration activity: {e}")
+
+
+@user_authenticated.connect_via(app)
+def user_authenticated_sighandler(app, user, **kwargs):
+    """
+    Signal handler for user authentication (login)
+    Logs successful login attempts to activity_log table
+    """
+    try:
+        from opentakserver.magk.models.activity_log import ActivityLog
+        from flask import request
+        
+        ActivityLog.log_activity(
+            activity_type='user_login',
+            description=f'User logged in: {user.username}',
+            user_id=user.id,
+            ip_address=request.remote_addr if request else None,
+            user_agent=request.headers.get('User-Agent') if request else None,
+            request_method=request.method if request else None,
+            request_path=request.path if request else None,
+            status_code=200,
+            metadata={
+                'email': user.email,
+                'login_count': user.login_count if hasattr(user, 'login_count') else None
+            },
+            resource_type='user',
+            resource_id=user.id,
+            success=True
+        )
+        logger.info(f"Activity logged: User login for {user.username}")
+    except Exception as e:
+        logger.error(f"Failed to log user login activity: {e}")
 
 
 def main():
