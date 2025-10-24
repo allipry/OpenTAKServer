@@ -113,36 +113,29 @@ def marti_get_activity_stats():
         # Get activity summary using ActivityLog model
         activity_summary = ActivityLog.get_activity_summary(days=days)
         
-        # Format summary data
-        stats_data = {
-            "time_period_days": days,
-            "activity_types": [],
-            "total_activities": 0,
-            "total_success": 0,
-            "total_failures": 0,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        
-        for activity_type, count, success_count, failure_count in activity_summary:
+        # Format summary data from the dictionary returned by get_activity_summary
+        activity_types_list = []
+        for activity_type, type_stats in activity_summary.get('activity_types', {}).items():
             activity_data = {
                 "activity_type": activity_type,
-                "count": count,
-                "success_count": success_count or 0,
-                "failure_count": failure_count or 0,
-                "success_rate": round((success_count or 0) / count * 100, 2) if count > 0 else 0
+                "count": type_stats['total'],
+                "success_count": type_stats['successful'],
+                "failure_count": type_stats['failed'],
+                "success_rate": round((type_stats['successful'] / type_stats['total'] * 100), 2) if type_stats['total'] > 0 else 0
             }
-            stats_data["activity_types"].append(activity_data)
-            stats_data["total_activities"] += count
-            stats_data["total_success"] += success_count or 0
-            stats_data["total_failures"] += failure_count or 0
+            activity_types_list.append(activity_data)
         
-        # Calculate overall success rate
-        if stats_data["total_activities"] > 0:
-            stats_data["overall_success_rate"] = round(
-                stats_data["total_success"] / stats_data["total_activities"] * 100, 2
-            )
-        else:
-            stats_data["overall_success_rate"] = 0
+        stats_data = {
+            "time_period_days": activity_summary['time_period_days'],
+            "start_date": activity_summary['start_date'],
+            "end_date": activity_summary['end_date'],
+            "activity_types": activity_types_list,
+            "total_activities": activity_summary['total_activities'],
+            "total_success": activity_summary['successful_activities'],
+            "total_failures": activity_summary['failed_activities'],
+            "overall_success_rate": round(activity_summary['success_rate'], 2),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
         
         # Marti API response format
         response = {
