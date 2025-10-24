@@ -98,3 +98,119 @@ class ActivityLog(db.Model):
     def __repr__(self):
         """String representation for debugging"""
         return f'<ActivityLog {self.id}: {self.activity_type} by user {self.user_id}>'
+    
+    @classmethod
+    def get_activity_summary(cls, days=7):
+        """
+        Get activity summary statistics for the specified number of days
+        
+        Args:
+            days (int): Number of days to include in summary (default: 7)
+            
+        Returns:
+            dict: Activity summary with counts by type and success rate
+        """
+        from datetime import timedelta
+        from sqlalchemy import func
+        
+        # Calculate date range
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(days=days)
+        
+        # Get activities in date range
+        activities = cls.query.filter(
+            cls.created_at >= start_date,
+            cls.created_at <= end_date
+        ).all()
+        
+        # Calculate statistics
+        total_activities = len(activities)
+        successful_activities = len([a for a in activities if a.success])
+        failed_activities = total_activities - successful_activities
+        
+        # Count by activity type
+        activity_types = {}
+        for activity in activities:
+            activity_type = activity.activity_type
+            if activity_type not in activity_types:
+                activity_types[activity_type] = {'total': 0, 'successful': 0, 'failed': 0}
+            
+            activity_types[activity_type]['total'] += 1
+            if activity.success:
+                activity_types[activity_type]['successful'] += 1
+            else:
+                activity_types[activity_type]['failed'] += 1
+        
+        return {
+            'time_period_days': days,
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+            'total_activities': total_activities,
+            'successful_activities': successful_activities,
+            'failed_activities': failed_activities,
+            'success_rate': (successful_activities / total_activities * 100) if total_activities > 0 else 0,
+            'activity_types': activity_types
+        }
+    
+    @classmethod
+    def get_activity_types(cls):
+        """
+        Get list of all distinct activity types in the database
+        
+        Returns:
+            list: List of activity type strings
+        """
+        from sqlalchemy import distinct
+        
+        types = db.session.query(distinct(cls.activity_type)).all()
+        return [t[0] for t in types if t[0]]
+    
+    @classmethod
+    def log_activity(cls, activity_type, user_id=None, description=None, 
+                    ip_address=None, user_agent=None, request_method=None,
+                    request_path=None, status_code=None, metadata=None,
+                    session_id=None, resource_type=None, resource_id=None,
+                    success=True, error_message=None):
+        """
+        Create and save a new activity log entry
+        
+        Args:
+            activity_type (str): Type of activity (e.g., 'user_login', 'user_logout')
+            user_id (int, optional): ID of user performing the activity
+            description (str, optional): Human-readable description
+            ip_address (str, optional): IP address of request
+            user_agent (str, optional): User agent string
+            request_method (str, optional): HTTP method (GET, POST, etc.)
+            request_path (str, optional): Request path
+            status_code (int, optional): HTTP status code
+            metadata (dict, optional): Additional metadata as JSON
+            session_id (str, optional): Session identifier
+            resource_type (str, optional): Type of resource affected
+            resource_id (int, optional): ID of resource affected
+            success (bool, optional): Whether activity was successful (default: True)
+            error_message (str, optional): Error message if activity failed
+            
+        Returns:
+            ActivityLog: The created activity log entry
+        """
+        activity = cls(
+            activity_type=activity_type,
+            user_id=user_id,
+            activity_description=description,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            request_method=request_method,
+            request_path=request_path,
+            status_code=status_code,
+            activity_metadata=metadata or {},
+            session_id=session_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            success=success,
+            error_message=error_message
+        )
+        
+        db.session.add(activity)
+        db.session.commit()
+        
+        return activity
