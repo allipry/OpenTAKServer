@@ -22,7 +22,7 @@ class ActivityLog(db.Model):
     id = Column(Integer, primary_key=True)
     
     # User reference (nullable for system activities)
-    user_id = Column(Integer, ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=True)
     
     # Activity information
     activity_type = Column(String(50), nullable=False)
@@ -53,18 +53,32 @@ class ActivityLog(db.Model):
     error_message = Column(Text)
     
     # Relationship to User model (Flask-Security)
-    user = relationship('User', foreign_keys=[user_id], backref='activity_logs')
+    # Note: Relationship removed to avoid mapper initialization issues
+    # Use user_id directly and query User model separately if needed
     
     def to_dict(self):
         """
         Convert ActivityLog instance to dictionary for JSON serialization
         Handles null user references (deleted users)
         """
+        # Get user info if user_id exists
+        username = None
+        user_email = None
+        if self.user_id:
+            try:
+                from opentakserver.models.user import User
+                user = User.query.get(self.user_id)
+                if user:
+                    username = user.username
+                    user_email = user.email
+            except:
+                pass
+        
         return {
             'id': self.id,
             'user_id': self.user_id,
-            'username': self.user.username if self.user else None,
-            'user_email': self.user.email if self.user else None,
+            'username': username,
+            'user_email': user_email,
             'activity_type': self.activity_type,
             'activity_description': self.activity_description,
             'ip_address': str(self.ip_address) if self.ip_address else None,
