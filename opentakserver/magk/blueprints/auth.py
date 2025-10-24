@@ -113,6 +113,24 @@ def marti_login():
         session_token = str(uuid.uuid4())
         session['api_token'] = session_token
         
+        # Log successful login activity
+        try:
+            from opentakserver.magk.models.activity_log import ActivityLog
+            ActivityLog.log_activity(
+                activity_type='user_login',
+                user_id=user.id,
+                description=f'User {username} logged in successfully',
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent'),
+                request_method=request.method,
+                request_path=request.path,
+                status_code=200,
+                session_id=session_token,
+                success=True
+            )
+        except Exception as e:
+            logger.error(f"Failed to log login activity: {e}")
+        
         # Prepare user data in Marti format
         user_roles = [role.name for role in user.roles]
         is_admin = 'administrator' in user_roles or 'admin' in user_roles
@@ -159,7 +177,28 @@ def marti_logout():
     Follows Marti API pattern: /Marti/api/auth/logout
     """
     try:
-        logger.info(f"Marti Auth: Logout request for user {current_user.username if current_user.is_authenticated else 'anonymous'}")
+        user_id = current_user.id if current_user.is_authenticated else None
+        username = current_user.username if current_user.is_authenticated else 'anonymous'
+        
+        logger.info(f"Marti Auth: Logout request for user {username}")
+        
+        # Log logout activity before clearing session
+        if user_id:
+            try:
+                from opentakserver.magk.models.activity_log import ActivityLog
+                ActivityLog.log_activity(
+                    activity_type='user_logout',
+                    user_id=user_id,
+                    description=f'User {username} logged out',
+                    ip_address=request.remote_addr,
+                    user_agent=request.headers.get('User-Agent'),
+                    request_method=request.method,
+                    request_path=request.path,
+                    status_code=200,
+                    success=True
+                )
+            except Exception as e:
+                logger.error(f"Failed to log logout activity: {e}")
         
         # Clear session
         session.clear()
