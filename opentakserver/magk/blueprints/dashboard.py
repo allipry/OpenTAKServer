@@ -98,10 +98,6 @@ def get_user_stats():
         
         regular_users = total_users - admin_users
         
-        # Get users with callsigns
-        users_with_callsigns = User.query.filter(User.callsign != None, User.callsign != '').count()
-        users_without_callsigns = total_users - users_with_callsigns
-        
         # Get recent logins
         now = datetime.now(timezone.utc)
         day_ago = now - timedelta(days=1)
@@ -116,8 +112,6 @@ def get_user_stats():
             'inactive': inactive_users,
             'admins': admin_users,
             'regular': regular_users,
-            'with_callsigns': users_with_callsigns,
-            'without_callsigns': users_without_callsigns,
             'recent_24h': recent_logins_24h,
             'recent_7d': recent_logins_7d,
             'timestamp': now.isoformat()
@@ -141,8 +135,6 @@ def get_user_stats():
                 'inactive': 0,
                 'admins': 0,
                 'regular': 0,
-                'with_callsigns': 0,
-                'without_callsigns': 0,
                 'recent_24h': 0,
                 'recent_7d': 0
             },

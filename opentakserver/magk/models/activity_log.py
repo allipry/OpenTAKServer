@@ -9,10 +9,7 @@ from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Foreign
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import INET, JSONB
 from datetime import datetime, timezone
-from flask_sqlalchemy import SQLAlchemy
-
-# Get db instance from Flask app
-db = SQLAlchemy()
+from opentakserver.extensions import db
 
 class ActivityLog(db.Model):
     """
