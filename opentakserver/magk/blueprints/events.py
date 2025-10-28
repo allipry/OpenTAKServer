@@ -1,301 +1,443 @@
 #!/usr/bin/env python3
 """
-Marti Events API
-Manages events/operations for the TAK Server registration system
+Events API Module
+Provides CRUD operations for event management with team assignments
 """
 
-from flask import Blueprint, jsonify, request
-from opentakserver.magk.services.database import get_database_connection
-import psycopg2
+from flask import Blueprint, jsonify, request, current_app
+from flask_security import auth_required, roles_required, current_user
+from marshmallow import Schema, fields, validate, ValidationError, validates, validates_schema
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
+from opentakserver.extensions import db
+from opentakserver.magk.models.event import Event
+from opentakserver.magk.models.event_team import EventTeam
 
 logger = logging.getLogger(__name__)
 
-# Create blueprint for events management
-marti_events_bp = Blueprint('marti_events', __name__, url_prefix='/Marti/api/events')
+# Create blueprint for events API
+events_bp = Blueprint('events', __name__, url_prefix='/Marti/api/events')
 
-def get_db_connection():
-    """Get database connection"""
-    return psycopg2.connect(
-        host="ots-postgresql",
-        database="opentakserver", 
-        user="ots",
-        password="simple123"
-    )
 
-@marti_events_bp.route('', methods=['GET'])
-def get_events():
+def get_marti_response(data, response_type="EventsData"):
+    """Helper function to format response in Marti API standard"""
+    return {
+        "version": "2",
+        "type": response_type,
+        "data": data,
+        "nodeId": "MAGK-Admin"
+    }
+
+
+# Marshmallow schemas for input validation
+class EventSchema(Schema):
+    """Schema for event creation and updates"""
+    name = fields.Str(required=True, validate=validate.Length(min=1, max=255))
+    description = fields.Str(allow_none=True, validate=validate.Length(max=5000))
+    event_type = fields.Str(allow_none=True, validate=validate.Length(max=50))
+    start_date = fields.DateTime(required=True)
+    end_date = fields.DateTime(required=True)
+    location = fields.Str(allow_none=True, validate=validate.Length(max=255))
+    wifi_ssid = fields.Str(allow_none=True, validate=validate.Length(max=32))
+    wifi_password = fields.Str(allow_none=True, validate=validate.Length(min=8, max=63))
+    is_active = fields.Bool(allow_none=True)
+    settings = fields.Dict(allow_none=True)
+    
+    @validates_schema
+    def validate_dates(self, data, **kwargs):
+        """Validate that end_date is after start_date"""
+        if 'start_date' in data and 'end_date' in data:
+            if data['end_date'] <= data['start_date']:
+                raise ValidationError('end_date must be after start_date')
+
+
+class EventUpdateSchema(Schema):
+    """Schema for event updates (all fields optional)"""
+    name = fields.Str(validate=validate.Length(min=1, max=255))
+    description = fields.Str(allow_none=True, validate=validate.Length(max=5000))
+    event_type = fields.Str(allow_none=True, validate=validate.Length(max=50))
+    start_date = fields.DateTime()
+    end_date = fields.DateTime()
+    location = fields.Str(allow_none=True, validate=validate.Length(max=255))
+    wifi_ssid = fields.Str(allow_none=True, validate=validate.Length(max=32))
+    wifi_password = fields.Str(allow_none=True, validate=validate.Length(min=8, max=63))
+    is_active = fields.Bool()
+    settings = fields.Dict(allow_none=True)
+
+
+class TeamAssignmentSchema(Schema):
+    """Schema for team assignment to event"""
+    team_id = fields.Int(required=True)
+    max_participants = fields.Int(allow_none=True, validate=validate.Range(min=1))
+
+
+# API Endpoints
+
+@events_bp.route('', methods=['GET'])
+@auth_required()
+def list_events():
     """
-    Get all events
-    Marti API: /Marti/api/events
+    GET /Marti/api/events
+    List all events with participant counts
+    
+    Query parameters:
+        - active_only (bool): Filter to active events only (default: false)
+        - current_only (bool): Filter to currently running events (default: false)
+        - upcoming_only (bool): Filter to upcoming events (default: false)
     """
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        # Get query parameters
+        active_only = request.args.get('active_only', 'false').lower() == 'true'
+        current_only = request.args.get('current_only', 'false').lower() == 'true'
+        upcoming_only = request.args.get('upcoming_only', 'false').lower() == 'true'
         
-        # Get active events
-        cursor.execute("""
-            SELECT id, name, description, event_type, is_active, 
-                   start_date, end_date, created_at, settings
-            FROM events 
-            WHERE is_active = true 
-            ORDER BY name
-        """)
+        # Build query based on filters
+        if current_only:
+            events = Event.get_current_events()
+        elif upcoming_only:
+            events = Event.get_upcoming_events()
+        elif active_only:
+            events = Event.get_active_events()
+        else:
+            events = Event.query.order_by(Event.start_date.desc()).all()
         
-        events = []
-        for row in cursor.fetchall():
-            events.append({
-                "id": row[0],
-                "name": row[1],
-                "description": row[2],
-                "event_type": row[3],
-                "is_active": row[4],
-                "start_date": row[5].isoformat() if row[5] else None,
-                "end_date": row[6].isoformat() if row[6] else None,
-                "created_at": row[7].isoformat() if row[7] else None,
-                "settings": row[8] or {}
-            })
+        # Convert to dict with participant counts
+        events_data = []
+        for event in events:
+            event_dict = event.to_dict(include_participant_count=True)
+            events_data.append(event_dict)
         
-        cursor.close()
-        conn.close()
-        
-        # Return in Marti API format
-        response = {
-            "version": "3",
-            "type": "com.bbn.marti.remote.events.EventList",
-            "data": events,
-            "nodeId": "opentakserver-core"
-        }
-        
-        logger.info(f"Retrieved {len(events)} events from database")
-        return jsonify(response), 200
+        return jsonify(get_marti_response({
+            'events': events_data,
+            'total': len(events_data)
+        })), 200
         
     except Exception as e:
-        logger.error(f"Error getting events: {e}")
-        return jsonify({
-            "version": "3",
-            "type": "com.bbn.marti.remote.exception.TakException",
-            "data": {"message": f"Failed to retrieve events: {str(e)}"},
-            "nodeId": "opentakserver-core"
-        }), 500
+        logger.error(f"Error listing events: {e}", exc_info=True)
+        return jsonify(get_marti_response({
+            'error': 'Failed to retrieve events',
+            'details': str(e)
+        }, "Error")), 500
 
-@marti_events_bp.route('', methods=['POST'])
+
+@events_bp.route('', methods=['POST'])
+@auth_required()
+@roles_required('admin')
 def create_event():
     """
-    Create a new event
-    Marti API: /Marti/api/events
+    POST /Marti/api/events
+    Create a new event (admin only)
+    
+    Request body: EventSchema
     """
     try:
-        data = request.get_json()
+        # Validate input
+        schema = EventSchema()
+        data = schema.load(request.get_json())
         
-        if not data or not data.get('name'):
-            return jsonify({
-                "version": "3",
-                "type": "com.bbn.marti.remote.exception.TakException",
-                "data": {"message": "Event name is required"},
-                "nodeId": "opentakserver-core"
-            }), 400
+        # Create event
+        event = Event.create_event(
+            name=data['name'],
+            start_date=data['start_date'],
+            end_date=data['end_date'],
+            description=data.get('description'),
+            location=data.get('location'),
+            wifi_ssid=data.get('wifi_ssid'),
+            wifi_password=data.get('wifi_password'),
+            event_type=data.get('event_type', 'tactical_exercise'),
+            created_by=current_user.id,
+            settings=data.get('settings', {})
+        )
         
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        logger.info(f"Event created: {event.name} by user {current_user.username}")
         
-        # Insert new event
-        import json
-        cursor.execute("""
-            INSERT INTO events (name, description, event_type, is_active, start_date, end_date, settings)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id, name, description, event_type, is_active, start_date, end_date, created_at, settings
-        """, (
-            data.get('name'),
-            data.get('description'),
-            data.get('event_type', 'operational'),
-            data.get('is_active', True),
-            data.get('start_date'),
-            data.get('end_date'),
-            json.dumps(data.get('settings', {}))
-        ))
+        return jsonify(get_marti_response({
+            'event': event.to_dict(include_participant_count=True),
+            'message': 'Event created successfully'
+        }, "EventCreated")), 201
         
-        row = cursor.fetchone()
-        event_data = {
-            "id": row[0],
-            "name": row[1],
-            "description": row[2],
-            "event_type": row[3],
-            "is_active": row[4],
-            "start_date": row[5].isoformat() if row[5] else None,
-            "end_date": row[6].isoformat() if row[6] else None,
-            "created_at": row[7].isoformat() if row[7] else None,
-            "settings": row[8] or {}
-        }
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        response = {
-            "version": "3",
-            "type": "com.bbn.marti.remote.events.Event",
-            "data": event_data,
-            "nodeId": "opentakserver-core"
-        }
-        
-        logger.info(f"Created event: {data.get('name')}")
-        return jsonify(response), 201
-        
-    except psycopg2.IntegrityError as e:
-        return jsonify({
-            "version": "3",
-            "type": "com.bbn.marti.remote.exception.TakException",
-            "data": {"message": "Event name already exists"},
-            "nodeId": "opentakserver-core"
-        }), 409
+    except ValidationError as e:
+        return jsonify(get_marti_response({
+            'error': 'Validation error',
+            'details': e.messages
+        }, "Error")), 400
+    except ValueError as e:
+        return jsonify(get_marti_response({
+            'error': 'Invalid data',
+            'details': str(e)
+        }, "Error")), 400
     except Exception as e:
-        logger.error(f"Error creating event: {e}")
-        return jsonify({
-            "version": "3",
-            "type": "com.bbn.marti.remote.exception.TakException",
-            "data": {"message": f"Failed to create event: {str(e)}"},
-            "nodeId": "opentakserver-core"
-        }), 500
+        logger.error(f"Error creating event: {e}", exc_info=True)
+        db.session.rollback()
+        return jsonify(get_marti_response({
+            'error': 'Failed to create event',
+            'details': str(e)
+        }, "Error")), 500
 
-@marti_events_bp.route('/<int:event_id>', methods=['GET'])
+
+@events_bp.route('/<int:event_id>', methods=['GET'])
+@auth_required()
 def get_event(event_id):
     """
-    Get a specific event by ID
-    Marti API: /Marti/api/events/<id>
+    GET /Marti/api/events/<id>
+    Get event details including teams and participant count
     """
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        event = Event.query.get(event_id)
         
-        cursor.execute("""
-            SELECT id, name, description, event_type, is_active, 
-                   start_date, end_date, created_at, settings
-            FROM events 
-            WHERE id = %s
-        """, (event_id,))
+        if not event:
+            return jsonify(get_marti_response({
+                'error': 'Event not found',
+                'event_id': event_id
+            }, "Error")), 404
         
-        row = cursor.fetchone()
-        if not row:
-            return jsonify({
-                "version": "3",
-                "type": "com.bbn.marti.remote.exception.NotFoundException",
-                "data": {"message": f"Event with ID {event_id} not found"},
-                "nodeId": "opentakserver-core"
-            }), 404
-        
-        event_data = {
-            "id": row[0],
-            "name": row[1],
-            "description": row[2],
-            "event_type": row[3],
-            "is_active": row[4],
-            "start_date": row[5].isoformat() if row[5] else None,
-            "end_date": row[6].isoformat() if row[6] else None,
-            "created_at": row[7].isoformat() if row[7] else None,
-            "settings": row[8] or {}
-        }
-        
-        cursor.close()
-        conn.close()
-        
-        response = {
-            "version": "3",
-            "type": "com.bbn.marti.remote.events.Event",
-            "data": event_data,
-            "nodeId": "opentakserver-core"
-        }
-        
-        return jsonify(response), 200
+        return jsonify(get_marti_response({
+            'event': event.to_dict(include_teams=True, include_participant_count=True)
+        })), 200
         
     except Exception as e:
-        logger.error(f"Error getting event {event_id}: {e}")
-        return jsonify({
-            "version": "3",
-            "type": "com.bbn.marti.remote.exception.TakException",
-            "data": {"message": f"Failed to retrieve event: {str(e)}"},
-            "nodeId": "opentakserver-core"
-        }), 500
+        logger.error(f"Error getting event {event_id}: {e}", exc_info=True)
+        return jsonify(get_marti_response({
+            'error': 'Failed to retrieve event',
+            'details': str(e)
+        }, "Error")), 500
 
-@marti_events_bp.route('/available', methods=['GET'])
-def get_available_events():
+
+@events_bp.route('/<int:event_id>', methods=['PUT'])
+@auth_required()
+@roles_required('admin')
+def update_event(event_id):
     """
-    Get events available for registration
-    Marti API: /Marti/api/events/available
+    PUT /Marti/api/events/<id>
+    Update event (admin only)
+    
+    Request body: EventUpdateSchema
     """
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        event = Event.query.get(event_id)
         
-        # Get active events suitable for registration
-        cursor.execute("""
-            SELECT id, name, description, event_type, is_active
-            FROM events 
-            WHERE is_active = true 
-            ORDER BY name
-        """)
+        if not event:
+            return jsonify(get_marti_response({
+                'error': 'Event not found',
+                'event_id': event_id
+            }, "Error")), 404
         
-        events = []
-        for row in cursor.fetchall():
-            events.append({
-                "id": row[0],
-                "name": row[1],
-                "description": row[2],
-                "type": row[3],
-                "active": row[4]
-            })
+        # Validate input
+        schema = EventUpdateSchema()
+        data = schema.load(request.get_json())
         
-        cursor.close()
-        conn.close()
+        # Update fields
+        if 'name' in data:
+            event.name = data['name']
+        if 'description' in data:
+            event.description = data['description']
+        if 'event_type' in data:
+            event.event_type = data['event_type']
+        if 'start_date' in data:
+            event.start_date = data['start_date']
+        if 'end_date' in data:
+            event.end_date = data['end_date']
+        if 'location' in data:
+            event.location = data['location']
+        if 'wifi_ssid' in data:
+            event.wifi_ssid = data['wifi_ssid']
+        if 'wifi_password' in data:
+            event.wifi_password = data['wifi_password']
+        if 'is_active' in data:
+            event.is_active = data['is_active']
+        if 'settings' in data:
+            event.settings = data['settings']
         
-        # Return both Marti API format and UI-compatible format
-        response = {
-            "version": "3",
-            "type": "com.bbn.marti.remote.events.Event",
-            "data": events,
-            "nodeId": "opentakserver-core",
-            # UI compatibility
-            "status": "success",
-            "events": events  # UI expects 'events' field
-        }
+        # Validate dates if both are present
+        if event.start_date and event.end_date:
+            is_valid, error_message = event.validate_dates()
+            if not is_valid:
+                return jsonify(get_marti_response({
+                    'error': error_message
+                }, "Error")), 400
         
-        logger.info(f"Retrieved {len(events)} available events from database")
-        return jsonify(response), 200
+        db.session.commit()
+        
+        logger.info(f"Event updated: {event.name} by user {current_user.username}")
+        
+        return jsonify(get_marti_response({
+            'event': event.to_dict(include_participant_count=True),
+            'message': 'Event updated successfully'
+        }, "EventUpdated")), 200
+        
+    except ValidationError as e:
+        return jsonify(get_marti_response({
+            'error': 'Validation error',
+            'details': e.messages
+        }, "Error")), 400
+    except Exception as e:
+        logger.error(f"Error updating event {event_id}: {e}", exc_info=True)
+        db.session.rollback()
+        return jsonify(get_marti_response({
+            'error': 'Failed to update event',
+            'details': str(e)
+        }, "Error")), 500
+
+
+@events_bp.route('/<int:event_id>', methods=['DELETE'])
+@auth_required()
+@roles_required('admin')
+def delete_event(event_id):
+    """
+    DELETE /Marti/api/events/<id>
+    Delete event (admin only)
+    Performs soft delete by setting is_active=False
+    """
+    try:
+        event = Event.query.get(event_id)
+        
+        if not event:
+            return jsonify(get_marti_response({
+                'error': 'Event not found',
+                'event_id': event_id
+            }, "Error")), 404
+        
+        # Soft delete
+        event.is_active = False
+        db.session.commit()
+        
+        logger.info(f"Event deleted: {event.name} by user {current_user.username}")
+        
+        return jsonify(get_marti_response({
+            'message': 'Event deleted successfully',
+            'event_id': event_id
+        }, "EventDeleted")), 200
         
     except Exception as e:
-        logger.error(f"Error getting available events: {e}")
-        return jsonify({
-            "version": "3",
-            "type": "com.bbn.marti.remote.exception.TakException",
-            "data": {"message": f"Failed to retrieve available events: {str(e)}"},
-            "nodeId": "opentakserver-core"
-        }), 500
+        logger.error(f"Error deleting event {event_id}: {e}", exc_info=True)
+        db.session.rollback()
+        return jsonify(get_marti_response({
+            'error': 'Failed to delete event',
+            'details': str(e)
+        }, "Error")), 500
 
-# Error handlers
-@marti_events_bp.errorhandler(404)
-def not_found(error):
-    return jsonify({
-        "version": "3",
-        "type": "com.bbn.marti.remote.exception.NotFoundException",
-        "data": {"message": "Event endpoint not found"},
-        "nodeId": "opentakserver-core"
-    }), 404
 
-@marti_events_bp.errorhandler(405)
-def method_not_allowed(error):
-    return jsonify({
-        "version": "3", 
-        "type": "com.bbn.marti.remote.exception.MethodNotAllowedException",
-        "data": {"message": "Method not allowed"},
-        "nodeId": "opentakserver-core"
-    }), 405
+@events_bp.route('/<int:event_id>/teams', methods=['GET'])
+@auth_required()
+def get_event_teams(event_id):
+    """
+    GET /Marti/api/events/<id>/teams
+    Get teams assigned to an event with participant counts
+    """
+    try:
+        event = Event.query.get(event_id)
+        
+        if not event:
+            return jsonify(get_marti_response({
+                'error': 'Event not found',
+                'event_id': event_id
+            }, "Error")), 404
+        
+        teams = event.get_teams()
+        
+        return jsonify(get_marti_response({
+            'event_id': event_id,
+            'teams': teams,
+            'total': len(teams)
+        })), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting teams for event {event_id}: {e}", exc_info=True)
+        return jsonify(get_marti_response({
+            'error': 'Failed to retrieve event teams',
+            'details': str(e)
+        }, "Error")), 500
 
-@marti_events_bp.errorhandler(500)
-def internal_error(error):
-    return jsonify({
-        "version": "3",
-        "type": "com.bbn.marti.remote.exception.TakException", 
-        "data": {"message": "Internal server error"},
-        "nodeId": "opentakserver-core"
-    }), 500
+
+@events_bp.route('/<int:event_id>/teams', methods=['POST'])
+@auth_required()
+@roles_required('admin')
+def assign_team_to_event(event_id):
+    """
+    POST /Marti/api/events/<id>/teams
+    Assign a team to an event (admin only)
+    
+    Request body: TeamAssignmentSchema
+    """
+    try:
+        event = Event.query.get(event_id)
+        
+        if not event:
+            return jsonify(get_marti_response({
+                'error': 'Event not found',
+                'event_id': event_id
+            }, "Error")), 404
+        
+        # Validate input
+        schema = TeamAssignmentSchema()
+        data = schema.load(request.get_json())
+        
+        # Assign team to event
+        event_team = event.add_team(
+            team_id=data['team_id'],
+            max_participants=data.get('max_participants')
+        )
+        
+        logger.info(f"Team {data['team_id']} assigned to event {event.name} by user {current_user.username}")
+        
+        return jsonify(get_marti_response({
+            'event_team': event_team.to_dict(include_team=True),
+            'message': 'Team assigned to event successfully'
+        }, "TeamAssigned")), 201
+        
+    except ValidationError as e:
+        return jsonify(get_marti_response({
+            'error': 'Validation error',
+            'details': e.messages
+        }, "Error")), 400
+    except Exception as e:
+        logger.error(f"Error assigning team to event {event_id}: {e}", exc_info=True)
+        db.session.rollback()
+        return jsonify(get_marti_response({
+            'error': 'Failed to assign team to event',
+            'details': str(e)
+        }, "Error")), 500
+
+
+@events_bp.route('/<int:event_id>/teams/<int:team_id>', methods=['DELETE'])
+@auth_required()
+@roles_required('admin')
+def remove_team_from_event(event_id, team_id):
+    """
+    DELETE /Marti/api/events/<id>/teams/<team_id>
+    Remove a team from an event (admin only)
+    """
+    try:
+        event = Event.query.get(event_id)
+        
+        if not event:
+            return jsonify(get_marti_response({
+                'error': 'Event not found',
+                'event_id': event_id
+            }, "Error")), 404
+        
+        # Remove team from event
+        success = event.remove_team(team_id)
+        
+        if not success:
+            return jsonify(get_marti_response({
+                'error': 'Team not assigned to this event',
+                'event_id': event_id,
+                'team_id': team_id
+            }, "Error")), 404
+        
+        logger.info(f"Team {team_id} removed from event {event.name} by user {current_user.username}")
+        
+        return jsonify(get_marti_response({
+            'message': 'Team removed from event successfully',
+            'event_id': event_id,
+            'team_id': team_id
+        }, "TeamRemoved")), 200
+        
+    except Exception as e:
+        logger.error(f"Error removing team {team_id} from event {event_id}: {e}", exc_info=True)
+        db.session.rollback()
+        return jsonify(get_marti_response({
+            'error': 'Failed to remove team from event',
+            'details': str(e)
+        }, "Error")), 500
