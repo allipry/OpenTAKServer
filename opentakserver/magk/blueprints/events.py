@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from opentakserver.extensions import db
 from opentakserver.magk.models.event import Event
 from opentakserver.magk.models.event_team import EventTeam
+from opentakserver.magk.services.qr_generator import generate_wifi_qr_string, validate_wifi_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -439,5 +440,85 @@ def remove_team_from_event(event_id, team_id):
         db.session.rollback()
         return jsonify(get_marti_response({
             'error': 'Failed to remove team from event',
+            'details': str(e)
+        }, "Error")), 500
+
+
+
+@events_bp.route('/<int:event_id>/wifi-qr', methods=['GET'])
+@auth_required()
+def get_event_wifi_qr(event_id):
+    """
+    GET /Marti/api/events/<id>/wifi-qr
+    Get WiFi QR code string for event WiFi network
+    
+    Returns the WiFi QR code string in standard format that can be
+    rendered as a QR code by the frontend.
+    
+    Response includes:
+        - qr_string: WiFi QR code string in format WIFI:T:WPA;S:ssid;P:password;H:false;;
+        - ssid: WiFi network SSID
+        - security: Security type (WPA, WPA2, WEP, or nopass)
+    """
+    try:
+        event = Event.query.get(event_id)
+        
+        if not event:
+            return jsonify(get_marti_response({
+                'error': 'Event not found',
+                'event_id': event_id
+            }, "Error")), 404
+        
+        # Check if event has WiFi configuration
+        if not event.wifi_ssid or not event.wifi_password:
+            return jsonify(get_marti_response({
+                'error': 'Event does not have WiFi configuration',
+                'event_id': event_id,
+                'message': 'WiFi SSID and password must be configured for this event'
+            }, "Error")), 400
+        
+        # Validate WiFi credentials
+        is_valid, error_message = validate_wifi_credentials(
+            event.wifi_ssid,
+            event.wifi_password,
+            security='WPA'
+        )
+        
+        if not is_valid:
+            logger.error(f"Invalid WiFi credentials for event {event_id}: {error_message}")
+            return jsonify(get_marti_response({
+                'error': 'Invalid WiFi configuration',
+                'details': error_message
+            }, "Error")), 400
+        
+        # Generate WiFi QR string
+        try:
+            qr_string = generate_wifi_qr_string(
+                ssid=event.wifi_ssid,
+                password=event.wifi_password,
+                security='WPA'
+            )
+            
+            logger.info(f"WiFi QR code generated for event {event.name} by user {current_user.username}")
+            
+            return jsonify(get_marti_response({
+                'qr_string': qr_string,
+                'ssid': event.wifi_ssid,
+                'security': 'WPA',
+                'event_id': event_id,
+                'event_name': event.name
+            }, "WiFiQRCode")), 200
+            
+        except ValueError as e:
+            logger.error(f"Error generating WiFi QR for event {event_id}: {e}")
+            return jsonify(get_marti_response({
+                'error': 'Failed to generate WiFi QR code',
+                'details': str(e)
+            }, "Error")), 400
+        
+    except Exception as e:
+        logger.error(f"Error getting WiFi QR for event {event_id}: {e}", exc_info=True)
+        return jsonify(get_marti_response({
+            'error': 'Failed to retrieve WiFi QR code',
             'details': str(e)
         }, "Error")), 500
