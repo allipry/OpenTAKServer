@@ -332,6 +332,10 @@ def register_participant():
     Integrates with existing user, team, and event systems
     Follows Marti API pattern: /Marti/api/registration/participant
     """
+    # Import db at function level to ensure it's available throughout
+    from opentakserver.extensions import db
+    from flask import current_app
+    
     try:
         data = request.get_json()
         logger.info("Marti Registration: Processing participant registration")
@@ -420,6 +424,37 @@ def register_participant():
         # For now, the user is created and can authenticate for certificate signing
         logger.info(f"User {mapped_data['callsign']} created successfully with Flask-Security")
         
+        # Generate connection configuration and token
+        config_token = None
+        try:
+            # Import ConnectionConfigService from services
+            from services.connection_config_service import ConnectionConfigService
+            
+            logger.info(f"Marti Registration: Initializing ConnectionConfigService for {mapped_data['callsign']}")
+            config_service = ConnectionConfigService(db_session=db.session)
+            
+            # Generate configuration for the device type
+            logger.info(f"Marti Registration: Generating config for device type: {mapped_data['phoneOS']}")
+            config_data = config_service.generate_config(
+                registration_id=user_id,
+                device_type=mapped_data['phoneOS'],
+                callsign=mapped_data['callsign']
+            )
+            
+            # Store configuration and get access token
+            logger.info(f"Marti Registration: Storing config and generating token")
+            config_token = config_service.store_config(
+                registration_id=user_id,
+                config_data=config_data
+            )
+            
+            logger.info(f"Marti Registration: Successfully generated config token for user {mapped_data['callsign']}: {config_token[:20]}...")
+            
+        except Exception as config_error:
+            logger.error(f"Marti Registration: Failed to generate config token: {config_error}", exc_info=True)
+            # Don't fail registration if config generation fails
+            config_token = None
+        
         # Create participant response data
         participant_data = {
             "uid": str(user_id),
@@ -439,6 +474,56 @@ def register_participant():
             "tempPassword": temp_password,  # Include temporary password for initial setup
             "created": "2025-10-05T21:30:00Z"
         }
+        
+        # Add config_token if generated successfully
+        if config_token:
+            participant_data["configToken"] = config_token
+        
+        # Generate certificate for iTAK users (iOS)
+        if mapped_data['phoneOS'] == 'ios':
+            try:
+                from services.certificate_authority import CertificateAuthority
+                from services.download_token_service import DownloadTokenService
+                
+                logger.info(f"Marti Registration: Generating certificate for iTAK user {mapped_data['callsign']}")
+                
+                ca_service = CertificateAuthority(app=current_app)
+                token_service = DownloadTokenService(db_session=db.session)
+                
+                # Generate certificate with user association
+                cert_result = ca_service.issue_certificate_with_association(
+                    registration_id=user_id,
+                    callsign=mapped_data['callsign'],
+                    email=mapped_data['email']
+                )
+                
+                if cert_result and cert_result.get('certificate_id'):
+                    # Generate download token for certificate
+                    download_token = token_service.generate_token(
+                        resource_type='certificate',
+                        resource_id=cert_result['certificate_id'],
+                        user_identifier=mapped_data['callsign']
+                    )
+                    
+                    # Add certificate info to response
+                    participant_data["certificateInfo"] = {
+                        'certificate_id': cert_result['certificate_id'],
+                        'serial_number': cert_result['serial_number'],
+                        'common_name': cert_result['callsign'],
+                        'email': cert_result['email'],
+                        'issued_at': cert_result['issued_at'].isoformat(),
+                        'expires_at': cert_result['expires_at'].isoformat(),
+                        'download_token': download_token
+                    }
+                    
+                    logger.info(f"Marti Registration: Certificate generated successfully for {mapped_data['callsign']} (ID: {cert_result['certificate_id']})")
+                else:
+                    logger.warning(f"Marti Registration: Certificate generation returned no result for {mapped_data['callsign']}")
+                    
+            except Exception as cert_error:
+                logger.error(f"Marti Registration: Failed to generate certificate for {mapped_data['callsign']}: {cert_error}", exc_info=True)
+                # Don't fail registration if certificate generation fails
+                participant_data["certificateError"] = str(cert_error)
         
         # Send registration email
         email_sent = False
@@ -577,6 +662,92 @@ def get_registration_status(registration_id):
             "version": "3",
             "type": "com.bbn.marti.remote.exception.TakException",
             "data": {"message": f"Failed to get registration status: {str(e)}"},
+            "nodeId": "opentakserver-registration"
+        }), 500
+
+@marti_registration_bp.route('/config/<token>', methods=['GET'])
+def get_connection_config(token):
+    """
+    Retrieve connection configuration using access token
+    Follows Marti API pattern: /Marti/api/registration/config/<token>
+    
+    Returns platform-specific connection details including:
+    - Server address and ports
+    - QR code for ATAK devices
+    - Step-by-step instructions
+    - Certificate download info for iTAK
+    """
+    try:
+        logger.info(f"Marti Registration: Retrieving config for token: {token[:20]}...")
+        
+        # Import ConnectionConfigService
+        from opentakserver.magk.services.connection_config_service import ConnectionConfigService
+        from opentakserver.extensions import db
+        
+        # Initialize service
+        config_service = ConnectionConfigService(db_session=db.session)
+        
+        # Retrieve configuration from database
+        config_data = config_service.retrieve_config(token)
+        
+        if not config_data:
+            logger.warning(f"Marti Registration: Invalid or expired token: {token[:20]}...")
+            return jsonify({
+                "version": "3",
+                "type": "com.bbn.marti.remote.exception.NotFoundException",
+                "data": {"message": "Invalid or expired configuration token"},
+                "nodeId": "opentakserver-registration"
+            }), 404
+        
+        # Generate QR code for ATAK devices
+        qr_code_data = None
+        if config_data.get('device_type') == 'android':
+            logger.info("Marti Registration: Generating QR code for ATAK device")
+            qr_code_data = config_service.create_qr_code(config_data)
+        
+        # Format instructions for the device type
+        instructions = config_service.format_instructions(
+            device_type=config_data.get('device_type', 'android'),
+            config=config_data
+        )
+        
+        # Build response data
+        response_data = {
+            "server_address": config_data.get('server_address'),
+            "server_port": config_data.get('server_port'),
+            "tcp_port": config_data.get('tcp_port', 8087),
+            "protocol": config_data.get('protocol', 'ssl'),
+            "device_type": config_data.get('device_type'),
+            "callsign": config_data.get('callsign'),
+            "certificate_required": config_data.get('certificate_required', False),
+            "qr_code_data": qr_code_data,
+            "instructions": instructions
+        }
+        
+        # Add certificate download URL if applicable (for iTAK)
+        if config_data.get('device_type') == 'ios' and config_data.get('certificate_required'):
+            registration_id = config_data.get('registration_id')
+            if registration_id:
+                # For now, provide a placeholder - certificate download endpoint can be added later
+                response_data['certificate_download_url'] = f"/Marti/api/registration/certificate/{registration_id}"
+        
+        # Return in Marti API format
+        response = {
+            "version": "3",
+            "type": "com.bbn.marti.remote.registration.Config",
+            "data": response_data,
+            "nodeId": "opentakserver-registration"
+        }
+        
+        logger.info(f"Marti Registration: Config retrieved successfully for device type: {config_data.get('device_type')}")
+        return jsonify(response), 200
+        
+    except Exception as e:
+        logger.error(f"Marti Registration: Error retrieving config: {e}", exc_info=True)
+        return jsonify({
+            "version": "3",
+            "type": "com.bbn.marti.remote.exception.TakException",
+            "data": {"message": f"Failed to retrieve configuration: {str(e)}"},
             "nodeId": "opentakserver-registration"
         }), 500
 
