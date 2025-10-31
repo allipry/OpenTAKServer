@@ -817,7 +817,6 @@ def download_certificate(token):
             SELECT 
                 c.id,
                 c.common_name,
-                c.serial_number,
                 c.expiration_date
             FROM certificates c
             WHERE c.id = :certificate_id
