@@ -681,7 +681,7 @@ def get_connection_config(token):
         logger.info(f"Marti Registration: Retrieving config for token: {token[:20]}...")
         
         # Import ConnectionConfigService
-        from opentakserver.magk.services.connection_config_service import ConnectionConfigService
+        from services.connection_config_service import ConnectionConfigService
         from opentakserver.extensions import db
         
         # Initialize service
@@ -778,6 +778,100 @@ def not_found(error):
         "data": {"message": "Registration endpoint not found"},
         "nodeId": "opentakserver-registration"
     }), 404
+
+@marti_registration_bp.route('/download/cert/<token>', methods=['GET'])
+def download_certificate(token):
+    """
+    Download certificate package using download token
+    Follows Marti API pattern: /Marti/api/registration/download/cert/<token>
+    """
+    try:
+        from services.download_token_service import DownloadTokenService
+        from services.certificate_authority import CertificateAuthority
+        from opentakserver.extensions import db
+        from flask import send_file, current_app
+        
+        logger.info(f"Marti Registration: Certificate download requested with token: {token[:20]}...")
+        
+        # Validate download token
+        token_service = DownloadTokenService(db_session=db.session)
+        is_valid, token_data = token_service.validate_token(token, resource_type='certificate')
+        
+        if not is_valid or not token_data:
+            logger.warning(f"Marti Registration: Invalid or expired download token")
+            return jsonify({
+                "version": "3",
+                "type": "com.bbn.marti.remote.exception.TakException",
+                "data": {"message": "Invalid or expired download token"},
+                "nodeId": "opentakserver-registration"
+            }), 404
+        
+        certificate_id = token_data['resource_id']
+        callsign = token_data['user_identifier']
+        
+        logger.info(f"Marti Registration: Downloading certificate {certificate_id} for {callsign}")
+        
+        # Get certificate information from database
+        from sqlalchemy import text
+        query = text("""
+            SELECT 
+                c.id,
+                c.common_name,
+                c.serial_number,
+                c.expiration_date
+            FROM certificates c
+            WHERE c.id = :certificate_id
+        """)
+        result = db.session.execute(query, {'certificate_id': certificate_id}).fetchone()
+        
+        if not result:
+            logger.error(f"Marti Registration: Certificate {certificate_id} not found")
+            return jsonify({
+                "version": "3",
+                "type": "com.bbn.marti.remote.exception.TakException",
+                "data": {"message": "Certificate not found"},
+                "nodeId": "opentakserver-registration"
+            }), 404
+        
+        cert_common_name = result[1]
+        
+        # Initialize CertificateAuthority service
+        ca_service = CertificateAuthority(app=current_app)
+        
+        # Build certificate package path
+        cert_package_path = os.path.join(ca_service.ca_folder, "packages", f"{cert_common_name}_certificate_package.zip")
+        
+        # Check if certificate package exists
+        if not os.path.exists(cert_package_path):
+            logger.error(f"Marti Registration: Certificate package not found at {cert_package_path}")
+            return jsonify({
+                "version": "3",
+                "type": "com.bbn.marti.remote.exception.TakException",
+                "data": {"message": "Certificate package not found"},
+                "nodeId": "opentakserver-registration"
+            }), 404
+        
+        # Increment token download count
+        token_service.increment_download_count(token)
+        
+        logger.info(f"Marti Registration: Sending certificate package for {cert_common_name}")
+        
+        # Send file
+        return send_file(
+            cert_package_path,
+            as_attachment=True,
+            download_name=f"{cert_common_name}_certificate_package.zip",
+            mimetype='application/zip'
+        )
+        
+    except Exception as e:
+        logger.error(f"Marti Registration: Certificate download error: {e}", exc_info=True)
+        return jsonify({
+            "version": "3",
+            "type": "com.bbn.marti.remote.exception.TakException",
+            "data": {"message": f"Certificate download failed: {str(e)}"},
+            "nodeId": "opentakserver-registration"
+        }), 500
 
 @marti_registration_bp.errorhandler(405)
 def method_not_allowed(error):
