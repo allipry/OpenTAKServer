@@ -291,6 +291,16 @@ def create_app():
 
     # Note: Marti Authentication and Registration APIs now loaded via MAGK extension below
     
+    # Register custom API endpoints (team management, etc.) BEFORE deprecation
+    try:
+        import sys
+        sys.path.insert(0, '/app')
+        from api.team_api import team_bp
+        app.register_blueprint(team_bp)
+        logger.info("✅ Registered team management API")
+    except Exception as e:
+        logger.warning(f"⚠️  Could not register team API: {e}")
+    
     # Register API deprecation notices for non-Marti endpoints
     from opentakserver.api_deprecation_notice import deprecation_bp
     app.register_blueprint(deprecation_bp)
