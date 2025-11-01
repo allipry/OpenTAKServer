@@ -10,14 +10,9 @@ Provides comprehensive team/group management with enterprise-grade features:
 - Team statistics
 """
 
-import sys
-sys.path.insert(0, '/app')
-
 from flask import Blueprint, request, jsonify, g
 from opentakserver.extensions import db
 from opentakserver.models.Group import Group
-from services.security_service import RateLimiter, InputValidator
-from services.logging_service import LoggingService, EventType, LogLevel
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Tuple, Optional
 from sqlalchemy import func, or_, and_
@@ -27,10 +22,26 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# Initialize services
-rate_limiter = RateLimiter()
-input_validator = InputValidator()
-logging_service = LoggingService()
+# Simple rate limiter (simplified version without external dependencies)
+class SimpleRateLimiter:
+    def __init__(self):
+        self._requests = {}
+    
+    def is_allowed(self, identifier, max_requests, window_seconds):
+        import time
+        now = time.time()
+        if identifier not in self._requests:
+            self._requests[identifier] = []
+        
+        # Clean old requests
+        self._requests[identifier] = [t for t in self._requests[identifier] if t > now - window_seconds]
+        
+        if len(self._requests[identifier]) < max_requests:
+            self._requests[identifier].append(now)
+            return True, len(self._requests[identifier]), None
+        return False, len(self._requests[identifier]), timedelta(seconds=window_seconds)
+
+rate_limiter = SimpleRateLimiter()
 
 # Create blueprint
 teams_bp = Blueprint('magk_teams', __name__, url_prefix='/Marti/api/teams')
@@ -142,12 +153,7 @@ def check_rate_limit() -> Optional[Tuple[Dict[str, Any], int]]:
     if not is_allowed:
         reset_seconds = int(reset_time.total_seconds()) if reset_time else RATE_LIMIT_WINDOW
         
-        logging_service.log_rate_limit_exceeded(
-            ip_address=client_ip,
-            endpoint=request.endpoint,
-            limit=RATE_LIMIT_REQUESTS,
-            window=RATE_LIMIT_WINDOW
-        )
+        logger.warning(f"Rate limit exceeded for {client_ip} on {request.endpoint}")
         
         return create_problem_response(
             title='Rate Limit Exceeded',
@@ -361,14 +367,7 @@ def create_team():
         db.session.commit()
         
         # Log team creation
-        logging_service._create_log_entry(
-            event_type=EventType.TEAM_CREATED,
-            level=LogLevel.INFO,
-            message=f'Team created: {team_name}',
-            details={'team_id': new_team.id, 'team_name': team_name, 'team_type': team_type},
-            ip_address=request.remote_addr,
-            user_agent=request.headers.get('User-Agent')
-        )
+        logger.info(f'Team created: {team_name} by {request.remote_addr}')
         
         logger.info(f"Team created: {team_name} (ID: {new_team.id})")
         
@@ -552,14 +551,7 @@ def update_team(team_id: int):
         db.session.commit()
         
         # Log team update
-        logging_service._create_log_entry(
-            event_type=EventType.TEAM_UPDATED,
-            level=LogLevel.INFO,
-            message=f'Team updated: {team.group_name}',
-            details={'team_id': team_id, 'updated_fields': updated_fields},
-            ip_address=request.remote_addr,
-            user_agent=request.headers.get('User-Agent')
-        )
+        logger.info(f'Team updated: {team.group_name} by {request.remote_addr}')
         
         logger.info(f"Team updated: {team.group_name} (ID: {team_id})")
         
@@ -651,14 +643,7 @@ def delete_team(team_id: int):
         db.session.commit()
         
         # Log team deletion
-        logging_service._create_log_entry(
-            event_type=EventType.TEAM_DELETED,
-            level=LogLevel.INFO,
-            message=f'Team deleted: {team_name}',
-            details={'team_id': team_id, 'team_name': team_name, 'forced': force},
-            ip_address=request.remote_addr,
-            user_agent=request.headers.get('User-Agent')
-        )
+        logger.info(f'Team deleted: {team_name} by {request.remote_addr}')
         
         logger.info(f"Team deleted: {team_name} (ID: {team_id})")
         
