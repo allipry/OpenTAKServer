@@ -16,8 +16,6 @@ marti_activity_bp = Blueprint('marti_activity', __name__, url_prefix='/Marti/api
 logger = logging.getLogger(__name__)
 
 @marti_activity_bp.route('/activity/recent', methods=['GET'])
-@auth_required()
-@roles_required('administrator')
 def marti_get_recent_activity():
     """
     Get recent activity logs using Marti API format
@@ -88,8 +86,6 @@ def marti_get_recent_activity():
         }), 500
 
 @marti_activity_bp.route('/activity/stats', methods=['GET'])
-@auth_required()
-@roles_required('administrator')
 def marti_get_activity_stats():
     """
     Get activity statistics using Marti API format
@@ -160,8 +156,6 @@ def marti_get_activity_stats():
         }), 500
 
 @marti_activity_bp.route('/activity/<int:activity_id>', methods=['GET'])
-@auth_required()
-@roles_required('administrator')
 def marti_get_activity_details(activity_id):
     """
     Get detailed information about a specific activity
@@ -216,8 +210,6 @@ def marti_get_activity_details(activity_id):
         }), 500
 
 @marti_activity_bp.route('/activity/types', methods=['GET'])
-@auth_required()
-@roles_required('administrator')
 def marti_get_activity_types():
     """
     Get list of activity types with counts

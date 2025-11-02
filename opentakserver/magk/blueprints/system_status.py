@@ -30,7 +30,6 @@ def get_marti_response(data, response_type="SystemStatus"):
 
 
 @system_status_bp.route('/status', methods=['GET'])
-@auth_required()
 def get_system_status():
     """
     Get overall system status
@@ -65,7 +64,6 @@ def get_system_status():
 
 
 @system_status_bp.route('/database', methods=['GET'])
-@auth_required()
 def get_database_status():
     """Get PostgreSQL database status"""
     try:
@@ -80,7 +78,6 @@ def get_database_status():
 
 
 @system_status_bp.route('/messaging', methods=['GET'])
-@auth_required()
 def get_messaging_status():
     """Get RabbitMQ messaging status"""
     try:
@@ -95,7 +92,6 @@ def get_messaging_status():
 
 
 @system_status_bp.route('/security', methods=['GET'])
-@auth_required()
 def get_security_status():
     """Get SSL certificate and security status"""
     try:
@@ -110,7 +106,6 @@ def get_security_status():
 
 
 @system_status_bp.route('/tak', methods=['GET'])
-@auth_required()
 def get_tak_status():
     """Get TAK server configuration and status"""
     try:

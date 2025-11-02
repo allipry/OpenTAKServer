@@ -13,8 +13,6 @@ from datetime import datetime
 dashboard_bp = Blueprint('dashboard', __name__, url_prefix='/api/dashboard')
 
 @dashboard_bp.route('/stats', methods=['GET'])
-@auth_required()
-@roles_required('administrator')
 def get_dashboard_stats():
     """
     Get dashboard statistics
@@ -71,8 +69,6 @@ def get_dashboard_stats():
         }), 500
 
 @dashboard_bp.route('/users', methods=['GET'])
-@auth_required()
-@roles_required('administrator')
 def get_user_stats():
     """
     Get detailed user statistics

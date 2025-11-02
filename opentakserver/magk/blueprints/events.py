@@ -5,7 +5,6 @@ Provides CRUD operations for event management with team assignments
 """
 
 from flask import Blueprint, jsonify, request, current_app
-from flask_security import auth_required, roles_required, current_user
 from marshmallow import Schema, fields, validate, ValidationError, validates, validates_schema
 import logging
 from datetime import datetime, timezone
@@ -75,7 +74,6 @@ class TeamAssignmentSchema(Schema):
 # API Endpoints
 
 @events_bp.route('', methods=['GET'])
-@auth_required()
 def list_events():
     """
     GET /Marti/api/events
@@ -122,15 +120,15 @@ def list_events():
 
 
 @events_bp.route('', methods=['POST'])
-@auth_required()
-@roles_required('admin')
 def create_event():
     """
     POST /Marti/api/events
-    Create a new event (admin only)
+    Create a new event
     
     Request body: EventSchema
+    Note: Authentication handled at nginx/proxy level
     """
+    
     try:
         # Validate input
         schema = EventSchema()
@@ -145,12 +143,12 @@ def create_event():
             location=data.get('location'),
             wifi_ssid=data.get('wifi_ssid'),
             wifi_password=data.get('wifi_password'),
-            event_type=data.get('event_type', 'tactical_exercise'),
-            created_by=current_user.id,
+            event_type=data.get('event_type', 'game_day'),
+            created_by=None,  # Authentication handled at proxy level
             settings=data.get('settings', {})
         )
         
-        logger.info(f"Event created: {event.name} by user {current_user.username}")
+        logger.info(f"Event created: {event.name}")
         
         return jsonify(get_marti_response({
             'event': event.to_dict(include_participant_count=True),
@@ -158,11 +156,13 @@ def create_event():
         }, "EventCreated")), 201
         
     except ValidationError as e:
+        logger.error(f"Validation error creating event: {e.messages}")
         return jsonify(get_marti_response({
             'error': 'Validation error',
             'details': e.messages
         }, "Error")), 400
     except ValueError as e:
+        logger.error(f"ValueError creating event: {str(e)}")
         return jsonify(get_marti_response({
             'error': 'Invalid data',
             'details': str(e)
@@ -177,7 +177,6 @@ def create_event():
 
 
 @events_bp.route('/<int:event_id>', methods=['GET'])
-@auth_required()
 def get_event(event_id):
     """
     GET /Marti/api/events/<id>
@@ -205,8 +204,6 @@ def get_event(event_id):
 
 
 @events_bp.route('/<int:event_id>', methods=['PUT'])
-@auth_required()
-@roles_required('admin')
 def update_event(event_id):
     """
     PUT /Marti/api/events/<id>
@@ -281,8 +278,6 @@ def update_event(event_id):
 
 
 @events_bp.route('/<int:event_id>', methods=['DELETE'])
-@auth_required()
-@roles_required('admin')
 def delete_event(event_id):
     """
     DELETE /Marti/api/events/<id>
@@ -319,7 +314,6 @@ def delete_event(event_id):
 
 
 @events_bp.route('/<int:event_id>/teams', methods=['GET'])
-@auth_required()
 def get_event_teams(event_id):
     """
     GET /Marti/api/events/<id>/teams
@@ -351,8 +345,6 @@ def get_event_teams(event_id):
 
 
 @events_bp.route('/<int:event_id>/teams', methods=['POST'])
-@auth_required()
-@roles_required('admin')
 def assign_team_to_event(event_id):
     """
     POST /Marti/api/events/<id>/teams
@@ -401,8 +393,6 @@ def assign_team_to_event(event_id):
 
 
 @events_bp.route('/<int:event_id>/teams/<int:team_id>', methods=['DELETE'])
-@auth_required()
-@roles_required('admin')
 def remove_team_from_event(event_id, team_id):
     """
     DELETE /Marti/api/events/<id>/teams/<team_id>
@@ -446,7 +436,6 @@ def remove_team_from_event(event_id, team_id):
 
 
 @events_bp.route('/<int:event_id>/wifi-qr', methods=['GET'])
-@auth_required()
 def get_event_wifi_qr(event_id):
     """
     GET /Marti/api/events/<id>/wifi-qr

@@ -751,6 +751,179 @@ def get_connection_config(token):
             "nodeId": "opentakserver-registration"
         }), 500
 
+@marti_registration_bp.route('/config/request-access', methods=['POST'])
+def request_config_access():
+    """
+    Request configuration access via email and callsign verification
+    Follows Marti API pattern: /Marti/api/registration/config/request-access
+    
+    Request Body:
+        email (str): User's email address (required)
+        callsign (str): User's callsign (required)
+        
+    Returns:
+        JSON response confirming email sent with new access link
+    """
+    try:
+        from opentakserver.extensions import db
+        from flask import current_app
+        from datetime import datetime
+        import re
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "version": "3",
+                "type": "com.bbn.marti.remote.exception.TakException",
+                "data": {"message": "Request body is required"},
+                "nodeId": "opentakserver-registration"
+            }), 400
+        
+        # Validate required fields
+        required_fields = ['email', 'callsign']
+        missing_fields = [field for field in required_fields if not data.get(field)]
+        
+        if missing_fields:
+            return jsonify({
+                "version": "3",
+                "type": "com.bbn.marti.remote.exception.TakException",
+                "data": {"message": f"Missing required fields: {', '.join(missing_fields)}"},
+                "nodeId": "opentakserver-registration"
+            }), 400
+        
+        email = data['email'].strip().lower()
+        callsign = data['callsign'].strip().lower()
+        
+        # Validate email format
+        email_pattern = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
+        if not re.match(email_pattern, email):
+            return jsonify({
+                "version": "3",
+                "type": "com.bbn.marti.remote.exception.TakException",
+                "data": {"message": "Invalid email address format"},
+                "nodeId": "opentakserver-registration"
+            }), 400
+        
+        # Query database for user matching email and callsign
+        from sqlalchemy import text
+        
+        try:
+            query = text("""
+                SELECT u.id, u.username, u.email
+                FROM "user" u
+                WHERE LOWER(u.email) = :email 
+                AND LOWER(u.username) = :callsign
+                LIMIT 1
+            """)
+            
+            result = db.session.execute(query, {
+                'email': email,
+                'callsign': callsign
+            }).fetchone()
+            
+            if not result:
+                # Don't reveal whether the combination exists for security
+                # Always return success to prevent enumeration attacks
+                logger.warning(f"Marti Registration: Configuration access requested for non-existent email/callsign: {email}/{callsign}")
+                return jsonify({
+                    "version": "3",
+                    "type": "com.bbn.marti.remote.registration.ConfigAccess",
+                    "data": {
+                        "success": True,
+                        "message": "If a registration exists with this email and callsign, an access link has been sent."
+                    },
+                    "nodeId": "opentakserver-registration"
+                }), 200
+            
+            user_id = result[0]
+            username = result[1]
+            user_email = result[2]
+            
+        except Exception as db_error:
+            logger.error(f"Marti Registration: Database query error: {db_error}", exc_info=True)
+            raise
+        
+        # Generate or retrieve configuration token
+        from services.connection_config_service import ConnectionConfigService
+        
+        config_service = ConnectionConfigService(db_session=db.session)
+        
+        # Check if existing token is still valid
+        token_query = text("""
+            SELECT access_token, token_expires_at
+            FROM connection_configs
+            WHERE registration_id = :user_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
+        
+        token_result = db.session.execute(token_query, {'user_id': user_id}).fetchone()
+        
+        access_token = None
+        if token_result and token_result[0]:
+            existing_token = token_result[0]
+            token_expires_at = token_result[1]
+            
+            # Check if token is still valid
+            if not token_expires_at or datetime.utcnow() < token_expires_at:
+                access_token = existing_token
+                logger.info(f"Marti Registration: Using existing valid token for user {username}")
+        
+        # Generate new token if needed
+        if not access_token:
+            # Default to android device type (can be enhanced later to track device type)
+            device_type = 'android'
+            
+            # Generate new configuration
+            config_data = config_service.generate_config(
+                registration_id=user_id,
+                device_type=device_type,
+                callsign=username
+            )
+            
+            # Store configuration and get new token
+            access_token = config_service.store_config(
+                registration_id=user_id,
+                config_data=config_data
+            )
+            
+            logger.info(f"Marti Registration: Generated new configuration token for user {username}")
+        
+        # Send email with access link
+        try:
+            access_link = f"{request.host_url}config/{access_token}"
+            
+            # TODO: Implement email sending
+            # For now, just log the access link
+            logger.info(f"Marti Registration: Configuration access link for {username}: {access_link}")
+            
+            # In production, send email here
+            # email_service.send_configuration_access_email(user_email, username, access_link)
+            
+        except Exception as email_error:
+            logger.error(f"Marti Registration: Error sending configuration access email: {email_error}")
+            # Don't fail the request if email fails
+        
+        # Always return success message (don't reveal if registration exists)
+        return jsonify({
+            "version": "3",
+            "type": "com.bbn.marti.remote.registration.ConfigAccess",
+            "data": {
+                "success": True,
+                "message": "If a registration exists with this email and callsign, an access link has been sent."
+            },
+            "nodeId": "opentakserver-registration"
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Marti Registration: Error processing configuration access request: {e}", exc_info=True)
+        return jsonify({
+            "version": "3",
+            "type": "com.bbn.marti.remote.exception.TakException",
+            "data": {"message": "Failed to process configuration access request"},
+            "nodeId": "opentakserver-registration"
+        }), 500
+
 @marti_registration_bp.route('/health', methods=['GET'])
 def registration_health():
     """

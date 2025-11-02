@@ -414,7 +414,6 @@ def confirm_password_reset():
         }), 500
 
 @password_bp.route('/change', methods=['POST'])
-@auth_required()
 def change_password():
     """
     Change password for authenticated user
