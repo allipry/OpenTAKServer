@@ -256,7 +256,7 @@ def update_event(event_id):
         
         db.session.commit()
         
-        logger.info(f"Event updated: {event.name} by user {current_user.username}")
+        logger.info(f"Event updated: {event.name}")
         
         return jsonify(get_marti_response({
             'event': event.to_dict(include_participant_count=True),
@@ -282,7 +282,10 @@ def delete_event(event_id):
     """
     DELETE /Marti/api/events/<id>
     Delete event (admin only)
-    Performs soft delete by setting is_active=False
+    
+    Behavior:
+    - If event is active (is_active=True): Performs soft delete by setting is_active=False
+    - If event is inactive (is_active=False): Permanently deletes from database
     """
     try:
         event = Event.query.get(event_id)
@@ -293,16 +296,33 @@ def delete_event(event_id):
                 'event_id': event_id
             }, "Error")), 404
         
-        # Soft delete
-        event.is_active = False
-        db.session.commit()
+        event_name = event.name
+        was_active = event.is_active
         
-        logger.info(f"Event deleted: {event.name} by user {current_user.username}")
-        
-        return jsonify(get_marti_response({
-            'message': 'Event deleted successfully',
-            'event_id': event_id
-        }, "EventDeleted")), 200
+        if event.is_active:
+            # Soft delete for active events
+            event.is_active = False
+            db.session.commit()
+            
+            logger.info(f"Event soft deleted (marked inactive): {event_name}")
+            
+            return jsonify(get_marti_response({
+                'message': 'Event marked as inactive',
+                'event_id': event_id,
+                'permanent': False
+            }, "EventDeleted")), 200
+        else:
+            # Permanent delete for inactive events
+            db.session.delete(event)
+            db.session.commit()
+            
+            logger.info(f"Event permanently deleted: {event_name}")
+            
+            return jsonify(get_marti_response({
+                'message': 'Event permanently deleted',
+                'event_id': event_id,
+                'permanent': True
+            }, "EventDeleted")), 200
         
     except Exception as e:
         logger.error(f"Error deleting event {event_id}: {e}", exc_info=True)
@@ -371,7 +391,7 @@ def assign_team_to_event(event_id):
             max_participants=data.get('max_participants')
         )
         
-        logger.info(f"Team {data['team_id']} assigned to event {event.name} by user {current_user.username}")
+        logger.info(f"Team {data['team_id']} assigned to event {event.name}")
         
         return jsonify(get_marti_response({
             'event_team': event_team.to_dict(include_team=True),
@@ -417,7 +437,7 @@ def remove_team_from_event(event_id, team_id):
                 'team_id': team_id
             }, "Error")), 404
         
-        logger.info(f"Team {team_id} removed from event {event.name} by user {current_user.username}")
+        logger.info(f"Team {team_id} removed from event {event.name}")
         
         return jsonify(get_marti_response({
             'message': 'Team removed from event successfully',
@@ -488,7 +508,7 @@ def get_event_wifi_qr(event_id):
                 security='WPA'
             )
             
-            logger.info(f"WiFi QR code generated for event {event.name} by user {current_user.username}")
+            logger.info(f"WiFi QR code generated for event {event.name}")
             
             return jsonify(get_marti_response({
                 'qr_string': qr_string,
