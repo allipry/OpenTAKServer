@@ -11,6 +11,7 @@ from sqlalchemy.orm import relationship
 @dataclass
 class User(db.Model, fsqla.FsUserMixin):
     email = db.Column(String(255), nullable=True)
+    callsign = db.Column(String(255), nullable=True)
     video_streams = relationship("VideoStream", back_populates="user")
     euds = relationship("EUD", back_populates="user")
     data_packages = relationship("DataPackage", back_populates="user")
@@ -27,6 +28,7 @@ class User(db.Model, fsqla.FsUserMixin):
             'current_login_at': self.current_login_at,
             'current_login_ip': self.current_login_ip,
             'email': self.email,
+            'callsign': self.callsign,
             'login_count': self.login_count,
             'euds': [eud.serialize() for eud in self.euds],
             'video_streams': [v.serialize() for v in self.video_streams],

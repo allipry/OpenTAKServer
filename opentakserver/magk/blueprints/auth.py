@@ -12,6 +12,21 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
+# SECURITY: Import account lockout manager
+try:
+    from opentakserver.magk.services.account_lockout import get_lockout_manager
+    ACCOUNT_LOCKOUT_AVAILABLE = True
+except ImportError:
+    ACCOUNT_LOCKOUT_AVAILABLE = False
+    logger.warning("Account lockout service not available")
+
+# SECURITY: Import security logger
+try:
+    from opentakserver.magk.services.security_logger import get_security_logger
+    SECURITY_LOGGER_AVAILABLE = True
+except ImportError:
+    SECURITY_LOGGER_AVAILABLE = False
+
 # Create blueprint following Marti API pattern
 marti_auth_bp = Blueprint('marti_auth', __name__, url_prefix='/Marti/api/auth')
 
@@ -22,6 +37,8 @@ def marti_login():
     """
     Authenticate user using Marti API format
     Follows Marti API pattern: /Marti/api/auth/login
+    
+    SECURITY: Includes account lockout protection and security logging
     """
     print("=== MARTI AUTH LOGIN CALLED ===", flush=True)
     try:
@@ -38,6 +55,32 @@ def marti_login():
             password = data.get('password')
         
         logger.info(f"Marti Auth: Login attempt for user {username}")
+        
+        # SECURITY: Check if account is locked
+        if ACCOUNT_LOCKOUT_AVAILABLE:
+            lockout_manager = get_lockout_manager()
+            if lockout_manager.is_locked(username):
+                lockout_time = lockout_manager.get_lockout_time_remaining(username)
+                logger.warning(f"Marti Auth: Login attempt for locked account {username}")
+                
+                # Log security event
+                if SECURITY_LOGGER_AVAILABLE:
+                    security_logger = get_security_logger()
+                    security_logger.log_auth_failure(
+                        username,
+                        "account_locked",
+                        {"lockout_time_remaining": lockout_time}
+                    )
+                
+                return jsonify({
+                    "version": "3",
+                    "type": "com.bbn.marti.remote.exception.TakException",
+                    "data": {
+                        "message": f"Account temporarily locked. Please try again in {lockout_time} seconds.",
+                        "lockout_time_remaining": lockout_time
+                    },
+                    "nodeId": "opentakserver-auth"
+                }), 429  # 429 Too Many Requests
         
         if not username or not password:
             return jsonify({
@@ -90,6 +133,63 @@ def marti_login():
         
         if not user or not password_valid:
             logger.warning(f"Marti Auth: Failed login attempt for {username}")
+            
+            # SECURITY: Record failed attempt and check for lockout
+            if ACCOUNT_LOCKOUT_AVAILABLE:
+                lockout_manager = get_lockout_manager()
+                attempts = lockout_manager.record_failed_attempt(username)
+                remaining = lockout_manager.get_remaining_attempts(username)
+                
+                # Log security event
+                if SECURITY_LOGGER_AVAILABLE:
+                    security_logger = get_security_logger()
+                    security_logger.log_auth_failure(
+                        username,
+                        "invalid_credentials",
+                        {
+                            "failed_attempts": attempts,
+                            "remaining_attempts": remaining
+                        }
+                    )
+                
+                # Check if account is now locked
+                if lockout_manager.is_locked(username):
+                    lockout_time = lockout_manager.get_lockout_time_remaining(username)
+                    
+                    # Log lockout event
+                    if SECURITY_LOGGER_AVAILABLE:
+                        security_logger.log_account_lockout(
+                            username,
+                            attempts,
+                            lockout_manager.lockout_duration.seconds // 60
+                        )
+                    
+                    return jsonify({
+                        "version": "3",
+                        "type": "com.bbn.marti.remote.exception.TakException",
+                        "data": {
+                            "message": f"Account locked due to multiple failed attempts. Try again in {lockout_time} seconds.",
+                            "lockout_time_remaining": lockout_time
+                        },
+                        "nodeId": "opentakserver-auth"
+                    }), 429
+                
+                # Return error with remaining attempts
+                message = "Invalid credentials"
+                if remaining > 0:
+                    message += f". {remaining} attempts remaining before lockout."
+                
+                return jsonify({
+                    "version": "3",
+                    "type": "com.bbn.marti.remote.exception.TakException",
+                    "data": {
+                        "message": message,
+                        "remaining_attempts": remaining
+                    },
+                    "nodeId": "opentakserver-auth"
+                }), 401
+            
+            # Fallback if account lockout not available
             return jsonify({
                 "version": "3",
                 "type": "com.bbn.marti.remote.exception.TakException",
@@ -106,12 +206,25 @@ def marti_login():
                 "nodeId": "opentakserver-auth"
             }), 401
         
+        # SECURITY: Reset failed attempts on successful login
+        if ACCOUNT_LOCKOUT_AVAILABLE:
+            lockout_manager = get_lockout_manager()
+            lockout_manager.reset_attempts(username)
+        
         # Login user (creates session)
         login_user(user, remember=True)
         
         # Generate session token for API compatibility
         session_token = str(uuid.uuid4())
         session['api_token'] = session_token
+        
+        # SECURITY: Log successful authentication
+        if SECURITY_LOGGER_AVAILABLE:
+            security_logger = get_security_logger()
+            security_logger.log_auth_success(username, {
+                "session_token": session_token,
+                "roles": [role.name for role in user.roles]
+            })
         
         # Log successful login activity
         try:

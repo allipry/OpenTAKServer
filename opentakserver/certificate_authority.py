@@ -14,6 +14,18 @@ from flask import request
 from jinja2 import Template
 from .ca_config import ca_config, server_config
 
+# SECURITY: Import secure subprocess executor to prevent command injection
+try:
+    from .magk.services.certificate_authority_security_patch import secure_openssl_call
+except ImportError:
+    # Fallback for development/testing - still use secure method
+    import shlex
+    def secure_openssl_call(command_string, timeout=30):
+        """Fallback secure subprocess call"""
+        command_list = shlex.split(command_string)
+        result = subprocess.run(command_list, shell=False, capture_output=True, timeout=timeout)
+        return result.returncode
+
 
 class CertificateAuthority:
 
@@ -43,7 +55,8 @@ class CertificateAuthority:
 
             self.logger.debug(command)
 
-            exit_code = subprocess.call(command, shell=True)
+            # SECURITY FIX: Use secure subprocess executor instead of shell=True
+            exit_code = secure_openssl_call(command)
 
             if exit_code:
                 raise Exception("Failed to create ca.pem. Exit code {}".format(exit_code))
@@ -55,12 +68,14 @@ class CertificateAuthority:
 
             self.logger.debug(command)
 
-            exit_code = subprocess.call(command, shell=True)
+            # SECURITY FIX: Use secure subprocess executor instead of shell=True
+            exit_code = secure_openssl_call(command)
 
             if exit_code:
                 raise Exception("Failed to add trust to CA. Exit code {}".format(exit_code))
 
-            use_legacy = not subprocess.call("openssl list -providers", shell=True)
+            # SECURITY FIX: Use secure subprocess executor instead of shell=True
+            use_legacy = not secure_openssl_call("openssl list -providers")
 
             if use_legacy:
                 command = ('openssl pkcs12 -legacy -export -in {} -out {} -passout pass:{} -nokeys -caname {}'
@@ -77,7 +92,8 @@ class CertificateAuthority:
 
             self.logger.debug(command)
 
-            exit_code = subprocess.call(command, shell=True)
+            # SECURITY FIX: Use secure subprocess executor instead of shell=True
+            exit_code = secure_openssl_call(command)
 
             if exit_code:
                 raise Exception("Failed to export truststore. Exit code {}".format(exit_code))
@@ -87,9 +103,9 @@ class CertificateAuthority:
             f.write("unique_subject = no")
             f.close()
 
-            command = ('cd {} && openssl ca -config {} -gencrl -keyfile {} -passin pass:{} -cert {} -out {}'
-                       .format(self.app.config.get("OTS_CA_FOLDER"),
-                               os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca_config.cfg"),
+            # SECURITY FIX: Remove 'cd' command and use cwd parameter instead
+            command = ('openssl ca -config {} -gencrl -keyfile {} -passin pass:{} -cert {} -out {}'
+                       .format(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca_config.cfg"),
                                os.path.join(self.app.config.get("OTS_CA_FOLDER"), 'ca-do-not-share.key'),
                                self.app.config.get("OTS_CA_PASSWORD"),
                                os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca.pem"),
@@ -97,7 +113,12 @@ class CertificateAuthority:
 
             self.logger.debug(command)
 
-            exit_code = subprocess.call(command, shell=True)
+            # SECURITY FIX: Use secure subprocess executor with cwd parameter
+            import shlex
+            command_list = shlex.split(command)
+            result = subprocess.run(command_list, shell=False, capture_output=True, 
+                                  cwd=self.app.config.get("OTS_CA_FOLDER"))
+            exit_code = result.returncode
 
             if exit_code:
                 raise Exception("Failed to create crl. Exit code {}".format(exit_code))
@@ -131,7 +152,8 @@ class CertificateAuthority:
 
         self.logger.debug(command)
 
-        exit_code = subprocess.call(command, shell=True)
+        # SECURITY FIX: Use secure subprocess executor instead of shell=True
+        exit_code = secure_openssl_call(command)
         if exit_code:
             raise Exception("Failed to create csr. Exit code {}".format(exit_code))
 
@@ -141,7 +163,8 @@ class CertificateAuthority:
 
         self.sign_csr(csr_bytes, common_name, server)
 
-        use_legacy = not subprocess.call("openssl list -providers", shell=True)
+        # SECURITY FIX: Use secure subprocess executor instead of shell=True
+        use_legacy = not secure_openssl_call("openssl list -providers")
 
         if use_legacy:
             command = (
@@ -166,7 +189,8 @@ class CertificateAuthority:
 
         self.logger.debug(command)
 
-        exit_code = subprocess.call(command, shell=True)
+        # SECURITY FIX: Use secure subprocess executor instead of shell=True
+        exit_code = secure_openssl_call(command)
         if exit_code:
             raise Exception("Failed to export p12 key. Exit code {}".format(exit_code))
 
@@ -179,7 +203,8 @@ class CertificateAuthority:
 
         self.logger.debug(command)
 
-        exit_code = subprocess.call(command, shell=True)
+        # SECURITY FIX: Use secure subprocess executor instead of shell=True
+        exit_code = secure_openssl_call(command)
         if exit_code:
             raise Exception("Failed to remove server key password. Exit code {}".format(exit_code))
 
@@ -193,7 +218,8 @@ class CertificateAuthority:
 
             self.logger.debug(command)
 
-            exit_code = subprocess.call(command, shell=True)
+            # SECURITY FIX: Use secure subprocess executor instead of shell=True
+            exit_code = secure_openssl_call(command)
             if exit_code:
                 raise Exception("Failed to generate server's public key. Exit code {}".format(exit_code))
 
@@ -237,7 +263,8 @@ class CertificateAuthority:
 
         self.logger.debug(command)
 
-        exit_code = subprocess.call(command, shell=True)
+        # SECURITY FIX: Use secure subprocess executor instead of shell=True
+        exit_code = secure_openssl_call(command)
         if exit_code:
             raise Exception("Failed to sign csr. Exit code {}".format(exit_code))
 

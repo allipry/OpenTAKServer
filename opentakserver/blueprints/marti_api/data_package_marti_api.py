@@ -20,6 +20,16 @@ from opentakserver.extensions import logger, db
 from opentakserver.models.DataPackage import DataPackage
 from opentakserver.models.MissionContent import MissionContent
 
+# SECURITY: Import secure hash service to replace MD5 with SHA-256
+try:
+    from opentakserver.magk.services.hash_service import SecureHasher
+except ImportError:
+    # Fallback for development/testing
+    class SecureHasher:
+        @staticmethod
+        def hash_data(data):
+            return hashlib.sha256(data).hexdigest()
+
 data_package_marti_api = Blueprint('data_package_marti_api', __name__)
 
 
@@ -52,22 +62,23 @@ def create_data_package_zip(file: FileStorage | str) -> str:
 
     zipf = zipfile.ZipFile(os.path.join(app.config.get("UPLOAD_FOLDER"), f"{filename}.zip"), "a", zipfile.ZIP_DEFLATED, False)
 
-    # Use the md5 of the uploaded file as its folder name in the data package zip
-    md5 = hashlib.md5()
+    # SECURITY FIX: Use SHA-256 instead of MD5 for file hashing
+    # Use the SHA-256 hash of the uploaded file as its folder name in the data package zip
+    sha256 = hashlib.sha256()
     try:
-        md5.update(file.stream.read())
+        sha256.update(file.stream.read())
         file.stream.seek(0)
     except AttributeError:
         with open(file, "r") as f:
-            md5.update(f.read().encode())
+            sha256.update(f.read().encode())
 
-    md5_hash = md5.hexdigest()
+    file_hash = sha256.hexdigest()
 
     if isinstance(file, str):
         with open(file, "r") as f:
-            zipf.writestr(f"{md5_hash}/{secure_filename(filename + extension)}", f.read())
+            zipf.writestr(f"{file_hash}/{secure_filename(filename + extension)}", f.read())
     else:
-        zipf.writestr(f"{md5_hash}/{secure_filename(filename + extension)}", file.stream.read())
+        zipf.writestr(f"{file_hash}/{secure_filename(filename + extension)}", file.stream.read())
 
     # MANIFEST file
     manifest = Element("MissionPackageManifest", {"version": "2"})

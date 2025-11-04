@@ -43,6 +43,7 @@ def marti_get_users():
                 "username": user.username,
                 "email": user.email,
                 "active": user.active,
+                "callsign": user.callsign,
                 "roles": [{"name": role.name} for role in user.roles],
                 "is_admin": is_admin,
                 "created_at": user.confirmed_at.isoformat() if hasattr(user, 'confirmed_at') and user.confirmed_at else None,
@@ -175,6 +176,7 @@ def marti_get_user(user_id):
             "username": user.username,
             "email": user.email,
             "active": user.active,
+            "callsign": user.callsign if hasattr(user, 'callsign') else None,
             "roles": [{"name": role.name} for role in user.roles],
             "is_admin": is_admin,
             "created_at": user.confirmed_at.isoformat() if hasattr(user, 'confirmed_at') and user.confirmed_at else None,
@@ -217,6 +219,7 @@ def marti_update_user(user_id):
             }), 400
         
         logger.info(f"Marti User API: Updating user {user_id}")
+        logger.info(f"Marti User API: Request data: {data}")
         
         # Get user from Flask-Security datastore
         from flask import current_app
@@ -264,8 +267,21 @@ def marti_update_user(user_id):
         if 'password' in data and data['password']:
             user.password = data['password']
         
+        # Update callsign if provided
+        if 'callsign' in data:
+            try:
+                # Check if callsign attribute exists on the model
+                if hasattr(user, 'callsign'):
+                    user.callsign = data['callsign']
+                    logger.info(f"Marti User API: Set callsign to: {data['callsign']}")
+                else:
+                    logger.warning(f"Marti User API: User model does not have callsign attribute")
+            except Exception as e:
+                logger.error(f"Marti User API: Error setting callsign: {e}")
+        
         # Update roles if specified
         if 'roles' in data:
+            logger.info(f"Marti User API: Updating roles to: {data['roles']}")
             # Remove all current roles
             for role in user.roles:
                 user_datastore.remove_role_from_user(user, role)
@@ -275,6 +291,9 @@ def marti_update_user(user_id):
                 role = user_datastore.find_role(role_name)
                 if role:
                     user_datastore.add_role_to_user(user, role)
+                    logger.info(f"Marti User API: Added role: {role_name}")
+                else:
+                    logger.warning(f"Marti User API: Role not found: {role_name}")
         
         # Commit changes
         user_datastore.commit()
@@ -288,6 +307,7 @@ def marti_update_user(user_id):
             "username": user.username,
             "email": user.email,
             "active": user.active,
+            "callsign": user.callsign,
             "roles": [{"name": role.name} for role in user.roles],
             "is_admin": is_admin,
             "updated_at": datetime.now(timezone.utc).isoformat()
@@ -317,9 +337,38 @@ def marti_delete_user(user_id):
     """
     Delete a user using Marti API format
     Follows Marti API pattern: /Marti/api/users/{id}
+    
+    Authentication: Requires authenticated admin user
+    Authorization: Only administrators can delete users
     """
     try:
-        logger.info(f"Marti User API: Deleting user {user_id}")
+        logger.info(f"Marti User API: Delete request for user {user_id}")
+        logger.info(f"Marti User API: current_user.is_authenticated = {current_user.is_authenticated}")
+        
+        # Manual authentication check (Flask-Security decorators cause HTTP 400)
+        if not current_user.is_authenticated:
+            logger.warning(f"Marti User API: Unauthenticated delete attempt for user {user_id}")
+            return jsonify({
+                "version": "3",
+                "type": "com.bbn.marti.remote.exception.UnauthorizedException",
+                "data": {"message": "Authentication required"},
+                "nodeId": "opentakserver-user-api"
+            }), 401
+        
+        # Manual admin role check
+        user_roles = [role.name for role in current_user.roles]
+        is_admin = 'administrator' in user_roles or 'admin' in user_roles
+        
+        if not is_admin:
+            logger.warning(f"Marti User API: Non-admin user {current_user.username} attempted to delete user {user_id}")
+            return jsonify({
+                "version": "3",
+                "type": "com.bbn.marti.remote.exception.ForbiddenException",
+                "data": {"message": "Administrator privileges required"},
+                "nodeId": "opentakserver-user-api"
+            }), 403
+        
+        logger.info(f"Marti User API: Admin user {current_user.username} deleting user {user_id}")
         
         # Get user from Flask-Security datastore
         from flask import current_app
@@ -336,8 +385,9 @@ def marti_delete_user(user_id):
                 "nodeId": "opentakserver-user-api"
             }), 404
         
-        # Prevent deletion of current user
+        # Prevent deletion of current user (self-deletion protection)
         if current_user.id == user.id:
+            logger.warning(f"Marti User API: User {current_user.username} attempted to delete their own account")
             return jsonify({
                 "version": "3",
                 "type": "com.bbn.marti.remote.exception.TakException",
@@ -345,9 +395,11 @@ def marti_delete_user(user_id):
                 "nodeId": "opentakserver-user-api"
             }), 400
         
-        # Delete user
-        user_datastore.delete_user(user)
-        user_datastore.commit()
+        # Delete user using SQLAlchemy directly
+        from flask import current_app
+        db = current_app.extensions['sqlalchemy']
+        db.session.delete(user)
+        db.session.commit()
         
         response = {
             "version": "3",
@@ -360,7 +412,10 @@ def marti_delete_user(user_id):
         return jsonify(response), 200
         
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
         logger.error(f"Marti User API: Error deleting user {user_id}: {e}")
+        logger.error(f"Marti User API: Traceback: {error_details}")
         return jsonify({
             "version": "3",
             "type": "com.bbn.marti.remote.exception.TakException",
