@@ -333,6 +333,17 @@ def create_app():
         import traceback
         logger.error(traceback.format_exc())
 
+    # Initialize WebSocket handlers
+    try:
+        sys.path.insert(0, '/app')
+        from websocket_init import init_all_websockets
+        init_all_websockets(socketio)
+        logger.info("✅ WebSocket handlers initialized successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize WebSocket handlers: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
     return app
 
 
@@ -492,7 +503,9 @@ def main():
     app.start_time = datetime.now(timezone.utc)
 
     try:
-        socketio.run(app, host=app.config.get("OTS_LISTENER_ADDRESS"), port=app.config.get("OTS_LISTENER_PORT"),
+        # Ensure port is an integer (environment variables are strings)
+        listener_port = int(app.config.get("OTS_LISTENER_PORT", 8080))
+        socketio.run(app, host=app.config.get("OTS_LISTENER_ADDRESS"), port=listener_port,
                      debug=app.config.get("DEBUG"), log_output=app.config.get("DEBUG"), use_reloader=False)
     except KeyboardInterrupt:
         logger.warning("Caught CTRL+C, exiting...")
