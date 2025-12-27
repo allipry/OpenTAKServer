@@ -21,7 +21,18 @@ class RabbitMQClient:
         self.exchanges = []
 
         try:
-            self.rabbit_connection = pika.SelectConnection(pika.ConnectionParameters(self.context.app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")),
+            # Build pika connection parameters with credentials
+            rmq_credentials = pika.PlainCredentials(
+                self.context.app.config.get("OTS_RABBITMQ_USERNAME", "guest"),
+                self.context.app.config.get("OTS_RABBITMQ_PASSWORD", "guest")
+            )
+            rmq_params = pika.ConnectionParameters(
+                host=self.context.app.config.get("OTS_RABBITMQ_SERVER_ADDRESS", "localhost"),
+                port=int(self.context.app.config.get("OTS_RABBITMQ_PORT", 5672)),
+                virtual_host=self.context.app.config.get("OTS_RABBITMQ_VHOST", "/"),
+                credentials=rmq_credentials
+            )
+            self.rabbit_connection = pika.SelectConnection(rmq_params,
                                                            self.on_connection_open)
             self.rabbit_channel: Channel = None
             self.iothread = Thread(target=self.rabbit_connection.ioloop.start)
