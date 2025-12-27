@@ -76,13 +76,24 @@ class CoTController:
         self.rabbit_channel = None
 
     def run(self):
-        self.rabbit_connection = pika.BlockingConnection(
-            pika.ConnectionParameters(self.context.app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")))
+        # Build pika connection parameters with credentials
+        rmq_credentials = pika.PlainCredentials(
+            self.context.app.config.get("OTS_RABBITMQ_USERNAME", "guest"),
+            self.context.app.config.get("OTS_RABBITMQ_PASSWORD", "guest")
+        )
+        rmq_params = pika.ConnectionParameters(
+            host=self.context.app.config.get("OTS_RABBITMQ_SERVER_ADDRESS", "localhost"),
+            port=int(self.context.app.config.get("OTS_RABBITMQ_PORT", 5672)),
+            virtual_host=self.context.app.config.get("OTS_RABBITMQ_VHOST", "/"),
+            credentials=rmq_credentials
+        )
+        self.rabbit_connection = pika.BlockingConnection(rmq_params)
         self.rabbit_channel = self.rabbit_connection.channel()
         self.rabbit_channel.queue_declare(queue='cot_controller')
         self.rabbit_channel.exchange_declare(exchange='cot_controller', exchange_type='fanout')
         self.rabbit_channel.queue_bind(exchange='cot_controller', queue='cot_controller')
-        self.rabbit_channel.basic_qos(prefetch_count=self.context.app.config.get("OTS_RABBITMQ_PREFETCH"))
+        prefetch_count = self.context.app.config.get("OTS_RABBITMQ_PREFETCH", 2)
+        self.rabbit_channel.basic_qos(prefetch_count=int(prefetch_count))
         self.rabbit_channel.basic_consume(queue='cot_controller', on_message_callback=self.on_message, auto_ack=False)
         self.rabbit_channel.start_consuming()
 
@@ -953,6 +964,11 @@ def create_app():
                     conf[option] = DefaultConfig.__dict__[option]
             config.write(yaml.safe_dump(conf))
 
+    # Load environment variables into Flask config AFTER config.yml
+    for key, value in os.environ.items():
+        if key.startswith("OTS_") or key in ["POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "DATABASE_URL", "SQLALCHEMY_DATABASE_URI"]:
+            app.config[key] = value
+
     setup_logging(app)
     db.init_app(app)
 
@@ -974,30 +990,46 @@ child_processes = []
 
 
 def main():
-    sio = SocketIO(message_queue="amqp://" + app.config.get("OTS_RABBITMQ_SERVER_ADDRESS"))
+    # Build RabbitMQ URL with credentials for SocketIO
+    rmq_user = app.config.get("OTS_RABBITMQ_USERNAME", "guest")
+    rmq_pass = app.config.get("OTS_RABBITMQ_PASSWORD", "guest")
+    rmq_host = app.config.get("OTS_RABBITMQ_SERVER_ADDRESS", "localhost")
+    rmq_port = app.config.get("OTS_RABBITMQ_PORT", 5672)
+    rmq_vhost = app.config.get("OTS_RABBITMQ_VHOST", "/")
+    rmq_url = f"amqp://{rmq_user}:{rmq_pass}@{rmq_host}:{rmq_port}/{rmq_vhost}"
+    sio = SocketIO(message_queue=rmq_url)
 
-    processes = 0
-    while processes < app.config.get("OTS_COT_PARSER_PROCESSES"):
-        try:
-            pid = os.fork()
-            if pid == 0:
-                cot_parser = CoTController(app.app_context(), logger, db, sio)
-                cot_parser.run()
-            else:
-                child_processes.append(pid)
-        except KeyboardInterrupt:
-            pass
-        except BaseException as e:
-            logger.error(f"cot_parser error: {e}")
-            logger.debug(traceback.format_exc())
-        processes += 1
+    num_processes = int(app.config.get("OTS_COT_PARSER_PROCESSES", 1))
+    
+    # If only 1 process, run directly without forking to avoid deadlock issues
+    if num_processes == 1:
+        logger.info("Starting CoT parser (single process mode)")
+        cot_parser = CoTController(app.app_context(), logger, db, sio)
+        cot_parser.run()
+    else:
+        # Multi-process mode with forking
+        processes = 0
+        while processes < num_processes:
+            try:
+                pid = os.fork()
+                if pid == 0:
+                    cot_parser = CoTController(app.app_context(), logger, db, sio)
+                    cot_parser.run()
+                else:
+                    child_processes.append(pid)
+            except KeyboardInterrupt:
+                pass
+            except BaseException as e:
+                logger.error(f"cot_parser error: {e}")
+                logger.debug(traceback.format_exc())
+            processes += 1
 
-    for i, child in enumerate(child_processes):
-        try:
-            os.waitpid(child, 0)
-        except BaseException:
-            logger.info(f"Exiting...")
-            sys.exit()
+        for i, child in enumerate(child_processes):
+            try:
+                os.waitpid(child, 0)
+            except BaseException:
+                logger.info(f"Exiting...")
+                sys.exit()
 
 
 if __name__ == "__main__":
