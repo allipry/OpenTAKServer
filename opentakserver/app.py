@@ -103,7 +103,7 @@ def init_extensions(app):
     socketio_logger = False
     if app.config.get("DEBUG"):
         socketio_logger = logger
-    socketio.init_app(app, logger=socketio_logger, ping_timeout=1, message_queue=f"amqp://{app.config.get('OTS_RABBITMQ_USERNAME')}:{app.config.get('OTS_RABBITMQ_PASSWORD')}@{app.config.get('OTS_RABBITMQ_SERVER_ADDRESS')}/{app.config.get('OTS_RABBITMQ_VHOST')}")
+    socketio.init_app(app, logger=socketio_logger, ping_timeout=1, message_queue=f"amqp://{app.config.get('OTS_RABBITMQ_USERNAME')}:{app.config.get('OTS_RABBITMQ_PASSWORD')}@{app.config.get('OTS_RABBITMQ_SERVER_ADDRESS')}:{app.config.get('OTS_RABBITMQ_PORT', 5672)}/{app.config.get('OTS_RABBITMQ_VHOST')}")
 
     # Debug RabbitMQ configuration
     print(f"DEBUG: RabbitMQ Host: {app.config.get('OTS_RABBITMQ_SERVER_ADDRESS')}")
