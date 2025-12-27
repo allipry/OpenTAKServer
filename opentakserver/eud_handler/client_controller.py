@@ -44,7 +44,14 @@ class ClientController(Thread):
         self.app = app
         self.db = db
         self.is_ssl = is_ssl
-        self.socketio = SocketIO(message_queue="amqp://" + app.config.get("OTS_RABBITMQ_SERVER_ADDRESS"))
+        # Build RabbitMQ URL with credentials for SocketIO
+        rmq_user = app.config.get("OTS_RABBITMQ_USERNAME", "guest")
+        rmq_pass = app.config.get("OTS_RABBITMQ_PASSWORD", "guest")
+        rmq_host = app.config.get("OTS_RABBITMQ_SERVER_ADDRESS", "localhost")
+        rmq_port = app.config.get("OTS_RABBITMQ_PORT", 5672)
+        rmq_vhost = app.config.get("OTS_RABBITMQ_VHOST", "/")
+        rmq_url = f"amqp://{rmq_user}:{rmq_pass}@{rmq_host}:{rmq_port}/{rmq_vhost}"
+        self.socketio = SocketIO(message_queue=rmq_url)
 
         self.user = None
 
@@ -86,7 +93,18 @@ class ClientController(Thread):
 
         # RabbitMQ
         try:
-            self.rabbit_connection = pika.SelectConnection(pika.ConnectionParameters(self.app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")),
+            # Build pika connection parameters with credentials
+            rmq_credentials = pika.PlainCredentials(
+                self.app.config.get("OTS_RABBITMQ_USERNAME", "guest"),
+                self.app.config.get("OTS_RABBITMQ_PASSWORD", "guest")
+            )
+            rmq_params = pika.ConnectionParameters(
+                host=self.app.config.get("OTS_RABBITMQ_SERVER_ADDRESS", "localhost"),
+                port=int(self.app.config.get("OTS_RABBITMQ_PORT", 5672)),
+                virtual_host=self.app.config.get("OTS_RABBITMQ_VHOST", "/"),
+                credentials=rmq_credentials
+            )
+            self.rabbit_connection = pika.SelectConnection(rmq_params,
                                                            self.on_connection_open)
             self.rabbit_channel: Channel | None = None
             # Start the pika ioloop in a thread or else it blocks and we can't receive any CoT messages

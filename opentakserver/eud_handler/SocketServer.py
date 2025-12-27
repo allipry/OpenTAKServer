@@ -101,7 +101,7 @@ class SocketServer:
                 os.path.join(self.app_context.app.config.get("OTS_CA_FOLDER"), "certs", "opentakserver", "opentakserver.pem"),
                 os.path.join(self.app_context.app.config.get("OTS_CA_FOLDER"), "certs", "opentakserver", "opentakserver.nopass.key"))
 
-            context.verify_mode = self.app_context.app.config.get("OTS_SSL_VERIFICATION_MODE")
+            context.verify_mode = int(self.app_context.app.config.get("OTS_SSL_VERIFICATION_MODE"))
             context.load_verify_locations(cafile=os.path.join(self.app_context.app.config.get("OTS_CA_FOLDER"), 'ca.pem'))
 
             return context

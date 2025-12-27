@@ -96,6 +96,12 @@ def create_app():
                     conf[option] = DefaultConfig.__dict__[option]
             config.write(yaml.safe_dump(conf))
 
+    # Load environment variables into Flask config AFTER config.yml
+    # This allows env vars to override config.yml values
+    for key, value in os.environ.items():
+        if key.startswith("OTS_") or key in ["POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "DATABASE_URL", "SQLALCHEMY_DATABASE_URI"]:
+            app.config[key] = value
+
     setup_logging(app)
     db.init_app(app)
 
@@ -121,10 +127,10 @@ app = create_app()
 def main():
     opts = args()
     if opts.ssl:
-        socket_server = SocketServer(logger, app.app_context(), app.config.get("OTS_SSL_STREAMING_PORT"), True)
+        socket_server = SocketServer(logger, app.app_context(), int(app.config.get("OTS_SSL_STREAMING_PORT")), True)
         logger.info(f"Started SSL server on port {app.config.get('OTS_SSL_STREAMING_PORT')}")
     else:
-        socket_server = SocketServer(logger, app.app_context(), app.config.get("OTS_TCP_STREAMING_PORT"))
+        socket_server = SocketServer(logger, app.app_context(), int(app.config.get("OTS_TCP_STREAMING_PORT")))
         logger.info(f"Started TCP server on port {app.config.get('OTS_TCP_STREAMING_PORT')}")
     socket_server.run()
 
