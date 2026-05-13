@@ -4,16 +4,26 @@ import re
 from datetime import datetime, timezone
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from flask import current_app as app
 import pika.channel
+from flask import current_app as app
 
 ISO8601_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 ISO8601_FORMAT_NO_MICROSECONDS = "%Y-%m-%dT%H:%M:%SZ"
-affiliations = ['friendly', 'hostile', 'unknown', 'pending', 'assumed', 'neutral', 'suspect', 'joker', 'faker']
+affiliations = [
+    "friendly",
+    "hostile",
+    "unknown",
+    "pending",
+    "assumed",
+    "neutral",
+    "suspect",
+    "joker",
+    "faker",
+]
 
 # For WTForms BooleanField, the default doesn't include 'False'
 # https://wtforms.readthedocs.io/en/3.1.x/fields/?highlight=false_values#wtforms.fields.BooleanField
-false_values = (False, 'False', 'false', '')
+false_values = (False, "False", "false", "")
 
 
 def get_tasking(cot_type):
@@ -119,24 +129,24 @@ def cot_type_to_2525c(cot_type):
     return mil_std_2525c
 
 
-def datetime_from_iso8601_string(datetime_string):
+def datetime_from_iso8601_string(datetime_string: str | None) -> datetime:
     if not datetime_string:
         return datetime.now(timezone.utc)
     try:
         dt = datetime.strptime(datetime_string, ISO8601_FORMAT)
-        dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=timezone.utc)
         return dt
     except ValueError:
         dt = datetime.strptime(datetime_string, ISO8601_FORMAT_NO_MICROSECONDS)
-        dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=timezone.utc)
         return dt
 
 
-def iso8601_string_from_datetime(datetime_object):
+def iso8601_string_from_datetime(datetime_object: datetime | None = None) -> str:
     if datetime_object:
         return datetime_object.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-2] + "Z"
     else:
-        return None
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-2] + "Z"
 
 
 def iso8601_string_from_datetime_no_ms(datetime_object):
@@ -149,28 +159,34 @@ def iso8601_string_from_datetime_no_ms(datetime_object):
 def generate_delete_cot(uid: str, cot_type: str) -> Element:
     now = datetime.now(timezone.utc)
 
-    event = Element('event', {'how': 'h-g-i-g-o', 'type': 't-x-d-d', 'version': '2.0',
-                              'uid': uid, 'start': iso8601_string_from_datetime(now),
-                              'time': iso8601_string_from_datetime(now),
-                              'stale': iso8601_string_from_datetime(now)})
-    SubElement(event, 'point', {'ce': '9999999', 'le': '9999999', 'hae': '0', 'lat': '0',
-                                'lon': '0'})
-    detail = SubElement(event, 'detail')
-    SubElement(detail, 'link', {'relation': 'p-p', 'uid': uid, 'type': cot_type})
-    SubElement(detail, '_flow-tags_',
-               {'TAK-Server-f1a8159ef7804f7a8a32d8efc4b773d0': iso8601_string_from_datetime(now)})
+    event = Element(
+        "event",
+        {
+            "how": "h-g-i-g-o",
+            "type": "t-x-d-d",
+            "version": "2.0",
+            "uid": uid,
+            "start": iso8601_string_from_datetime(now),
+            "time": iso8601_string_from_datetime(now),
+            "stale": iso8601_string_from_datetime(now),
+        },
+    )
+    SubElement(
+        event, "point", {"ce": "9999999", "le": "9999999", "hae": "0", "lat": "0", "lon": "0"}
+    )
+    detail = SubElement(event, "detail")
+    SubElement(detail, "link", {"relation": "p-p", "uid": uid, "type": cot_type})
+    SubElement(
+        detail,
+        "_flow-tags_",
+        {"TAK-Server-f1a8159ef7804f7a8a32d8efc4b773d0": iso8601_string_from_datetime(now)},
+    )
 
     return event
 
 
-def publish_cot(cot: Element, channel: pika.channel.Channel):
-    channel.basic_publish(exchange='cot', routing_key='', body=json.dumps(
-        {'cot': tostring(cot).decode('utf-8'), 'uid': app.config['OTS_NODE_ID']}),
-                          properties=pika.BasicProperties(expiration=app.config.get("OTS_RABBITMQ_TTL")))
-
-
 def format_bytes(size_bytes: int | None):
-    if size_bytes == None or size_bytes == 0:
+    if size_bytes is None or size_bytes == 0:
         return "0B"
     size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
     i = int(math.floor(math.log(size_bytes, 1024)))

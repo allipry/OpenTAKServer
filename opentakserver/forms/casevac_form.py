@@ -1,5 +1,5 @@
-from wtforms import StringField, IntegerField, BooleanField, FloatField, FieldList, FormField
-from wtforms.validators import DataRequired, UUID
+from wtforms import BooleanField, FieldList, FloatField, FormField, IntegerField, StringField
+from wtforms.validators import UUID, DataRequired
 
 from opentakserver.forms.point_form import PointForm
 from opentakserver.forms.zmist_form import ZmistForm
@@ -10,6 +10,7 @@ class CasEvacForm(PointForm):
     ambulatory = IntegerField()
     casevac = BooleanField()
     child = IntegerField()
+    convenience = IntegerField()
     enemy = IntegerField()
     epw = IntegerField()
     equipment_detail = StringField()
@@ -40,6 +41,7 @@ class CasEvacForm(PointForm):
     terrain_slope_dir = StringField()
     title = StringField(validators=[DataRequired()])
     urgent = IntegerField()
+    urgent_surgical = IntegerField()
     us_civilian = IntegerField()
     us_military = IntegerField()
     ventilator = BooleanField()

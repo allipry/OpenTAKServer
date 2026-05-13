@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from flask import current_app as app
 from abc import abstractmethod
 
-from flask import Flask, Blueprint, url_for
+from flask import Blueprint, Flask
+from flask import current_app as app
+from flask import url_for
 
 from opentakserver.extensions import logger
 from opentakserver.plugins.BasePlugin import BasePlugin
@@ -50,4 +51,3 @@ class Plugin(BasePlugin):
                 url = url_for(rule.endpoint, **(rule.defaults or {}))
                 if url.startswith(url_prefix) and url not in self.routes:
                     self.routes.append(url)
-                    logger.warning(f"Adding {url}")

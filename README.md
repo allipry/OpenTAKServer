@@ -11,11 +11,14 @@ OpenTAKServer (OTS) is yet another open source TAK Server for ATAK, iTAK, and Wi
 Join us on our [Discord server](https://discord.gg/6uaVHjtfXN)
 
 ## Current Features
-- Connect via TCP from ATAK, WinTAK, and iTAK
+- Connect via TCP from ATAK, WinTAK, iTAK, TAKAware, TAKX, CloudTAK, and PyTAK
 - SSL
 - Authentication
 - [WebUI with a live map](https://github.com/brian7704/OpenTAKServer-UI)
 - Client certificate enrollment
+- Groups/Channels
+- LDAP/Active Directory
+- ATAK Plugin Update Server
 - Send and receive messages
 - Send and receive points
 - Send and receive routes
@@ -34,7 +37,6 @@ Join us on our [Discord server](https://discord.gg/6uaVHjtfXN)
 
 ## Planned Features
 - Federation
-- Groups/Channels
 
 ## Requirements
 - RabbitMQ
@@ -52,23 +54,17 @@ Join us on our [Discord server](https://discord.gg/6uaVHjtfXN)
 
 `curl https://i.opentakserver.io/raspberry_pi_installer -Ls | bash -`
 
-### Rocky 9
-
-`curl -s -L https://i.opentakserver.io/rocky_linux_installer | bash -`
-
 ### Windows
 
-Open PowerShell as an administrator and run the following command
-
-`Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://i.opentakserver.io/windows_installer'))`
-
-### MacOS
-
-`curl -Ls https://i.opentakserver.io/macos_installer | bash -`
+OTS can be installed on Windows using WSL and the Ubuntu installer script
 
 ## Documentation
 
 https://docs.opentakserver.io
+
+## Supported Languages
+
+![Supported Languages](https://weblate.opentakserver.io/widget/opentakserver/multi-auto.svg)
 
 ## Supporting the project
 

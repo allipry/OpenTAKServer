@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, BooleanField
+from wtforms import BooleanField, StringField
 from wtforms.validators import Optional
 
 from opentakserver.functions import false_values
@@ -13,3 +13,4 @@ class DeviceProfileForm(FlaskForm):
     connection = BooleanField(false_values=false_values)
     tool = StringField(validators=[Optional()])
     active = BooleanField(false_values=false_values)
+    eud_uid = StringField(validators=[Optional()])
